@@ -208,8 +208,6 @@ def main() -> int:
             print(f"Smoke passed: {frontend_url}")
             return 0
         except Exception:
-            stop_process(frontend)
-            stop_process(backend)
             dump_recent_output("backend", backend)
             dump_recent_output("frontend", frontend)
             raise
