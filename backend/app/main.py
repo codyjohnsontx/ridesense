@@ -79,7 +79,9 @@ def strava_oauth_callback(
 
     try:
         data = open_json(state)
-        user_id = data["user_id"]
+        user_id = data.get("user_id")
+        if data.get("provider") != "strava" or not user_id:
+            return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
     except Exception:
         return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
 

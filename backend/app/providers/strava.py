@@ -27,7 +27,9 @@ def authorization_url(state: str) -> str:
 
 
 def accepted_scopes(payload: dict) -> set[str]:
-    scope_value = payload.get("scope") or REQUESTED_SCOPES
+    scope_value = payload.get("scope")
+    if scope_value is None:
+        return set()
     if isinstance(scope_value, str):
         return {scope.strip() for scope in scope_value.split(",") if scope.strip()}
     if isinstance(scope_value, list):
