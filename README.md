@@ -2,15 +2,22 @@
 
 A hosted-training-insights MVP for cyclists. Users link TrainerRoad and Strava, sync workouts into one canonical timeline, and get trend/regression insights plus grounded Q&A over their own training data.
 
-## Architecture
+## What this project is
 
-- `frontend/`: Next.js dashboard.
-- `backend/`: FastAPI API, sync workers, analytics, and AI answer adapter.
-- `supabase/`: production-oriented Postgres/RLS schema.
+RideSense pulls a rider's workouts from both TrainerRoad and Strava, deduplicates the overlap into a single canonical activity timeline, and runs a deterministic analytics pipeline over it (weekly load, zone distribution, trends, regressions). A thin AI layer answers natural-language questions on top of those facts — it cites the metrics it used and stays out of medical or coaching prescriptions. The dashboard surfaces it as one unified view: activities, plan, comparison blocks, and an Ask interface.
 
-The local backend uses SQLite for fast development. Production should use Supabase Postgres with the included schema and row-level security.
+The repository is organized as a working monorepo:
+
+- `frontend/` — Next.js (App Router) dashboard with a shadcn/Tailwind UI.
+- `backend/` — FastAPI service: REST API, provider sync workers, normalization + merge, analytics, AI answer adapter.
+- `supabase/` — production Postgres schema with row-level security.
+- `scripts/`, `docs/` — utilities and design notes.
+
+The local backend uses SQLite for fast iteration. Production targets Supabase Postgres with the included schema and RLS.
 
 ## Local Setup
+
+One-time:
 
 ```bash
 cp .env.example .env
@@ -18,16 +25,29 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
 ```
 
 ```bash
 cd frontend
 pnpm install
+```
+
+Run (two terminals):
+
+```bash
+# terminal 1 — backend
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+```bash
+# terminal 2 — frontend
+cd frontend
 pnpm dev
 ```
 
-In development, set `DEV_AUTH_ENABLED=true` and the frontend/backend will use a stable demo user unless a real bearer token is provided.
+Open http://localhost:3000. With `DEV_AUTH_ENABLED=true` (the default), both servers resolve to a stable `demo-user`. If `backend/data/app.db` has been seeded (see `backend/scripts_seed_demo.py`), the dashboard will populate with demo activities, weekly load, and zone breakdown.
 
 To enable real auth locally, create a Supabase project, set `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`, and set `DEV_AUTH_ENABLED=false`
