@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { api, AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/api";
 import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
+import { AuthGate } from "./AuthGate";
+import { Dashboard, formatLastSync } from "./Dashboard";
+import { Shell } from "./Shell";
+import { Card, CardContent, Skeleton } from "./ui";
+import { ActivitiesScreen, AskScreen, ConnectionsScreen, PlaceholderScreen, ProfileScreen } from "./screens";
 
 const emptyProfile: AthleteProfile = {
   event_type: "",
@@ -12,32 +17,44 @@ const emptyProfile: AthleteProfile = {
   training_days: ""
 };
 
-function loadForActivity(activity: { tss: number | null; estimated_load: number | null }) {
-  return activity.tss ?? activity.estimated_load ?? 0;
+type ScreenId = "dashboard" | "rides" | "plan" | "compare" | "ask" | "connections" | "profile";
+
+function pickLastSync(d: DashboardResponse | null) {
+  if (!d) return null;
+  const stamps = d.connections.map((c) => c.updated_at).filter(Boolean);
+  if (stamps.length === 0) return null;
+  return stamps.sort().reverse()[0];
 }
 
 export function DashboardClient() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [profile, setProfile] = useState<AthleteProfile>(emptyProfile);
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [active, setActive] = useState<ScreenId>("dashboard");
+  const [range, setRange] = useState<"4w" | "12w" | "6mo" | "1y">("12w");
   const [question, setQuestion] = useState("Am I trending toward better endurance fitness?");
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
-  const [authMessage, setAuthMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [authReady, setAuthReady] = useState(!supabaseConfigured);
+  const [, startLoad] = useTransition();
   const accessToken = session?.access_token;
 
   const load = () => {
-    startTransition(async () => {
-      const [dashboardData, profileData] = await Promise.all([
-        api.dashboard(accessToken),
-        api.profile(accessToken)
-      ]);
-      setDashboard(dashboardData);
-      setProfile(profileData);
+    startLoad(async () => {
+      try {
+        const [dashboardData, profileData] = await Promise.all([
+          api.dashboard(accessToken),
+          api.profile(accessToken)
+        ]);
+        setDashboard(dashboardData);
+        setProfile(profileData);
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "Failed to load dashboard.");
+      }
     });
   };
 
@@ -58,6 +75,7 @@ export function DashboardClient() {
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      setAuthReady(true);
       if (data.session) {
         load();
       }
@@ -74,21 +92,21 @@ export function DashboardClient() {
     return () => {
       data.subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (supabaseConfigured && session) {
       load();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
 
-  async function submitAuth() {
-    if (!supabase) {
-      return;
-    }
+  async function submitAuth(mode: "sign-in" | "sign-up", email: string, password: string) {
+    if (!supabase) return;
     setAuthMessage("");
     const result =
-      authMode === "sign-in"
+      mode === "sign-in"
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password });
 
@@ -96,12 +114,10 @@ export function DashboardClient() {
       setAuthMessage(result.error.message);
       return;
     }
-
-    if (authMode === "sign-up" && !result.data.session) {
+    if (mode === "sign-up" && !result.data.session) {
       setAuthMessage("Check your email to confirm the account, then sign in.");
       return;
     }
-
     setSession(result.data.session);
   }
 
@@ -114,255 +130,177 @@ export function DashboardClient() {
     setMessage("");
   }
 
-  if (supabaseConfigured && !session) {
+  async function syncAll() {
+    setSyncing(true);
+    try {
+      const run = await api.startSync("all", accessToken);
+      setMessage(run.message || `Sync ${run.status}`);
+      load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function ask() {
+    if (!question.trim()) return;
+    setAsking(true);
+    try {
+      const response = await api.ask(question, accessToken);
+      setAnswer(response);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Ask failed.");
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    try {
+      const next = await api.saveProfile(profile, accessToken);
+      setProfile(next);
+      setMessage("Athlete context saved.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  async function linkStrava() {
+    try {
+      const response = await api.startStravaLink(accessToken);
+      window.location.href = response.authorization_url;
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not start Strava link.");
+    }
+  }
+
+  async function linkTrainerRoad() {
+    try {
+      const response = await api.startTrainerRoadLink(accessToken);
+      setMessage(response.message);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not start TrainerRoad link.");
+    }
+  }
+
+  const lastSync = useMemo(() => formatLastSync(pickLastSync(dashboard)), [dashboard]);
+  const syncStatus: "ok" | "stale" | "error" = useMemo(() => {
+    if (!dashboard) return "ok";
+    if (dashboard.connections.some((c) => c.status === "error")) return "error";
+    if (dashboard.connections.some((c) => c.status === "stale")) return "stale";
+    return "ok";
+  }, [dashboard]);
+
+  if (supabaseConfigured && !authReady) {
     return (
-      <main className="shell auth-shell">
-        <section className="auth-panel">
-          <p className="eyebrow">Cycling intelligence</p>
-          <h1 className="brand">RideSense</h1>
-          <p className="lede">
-            Link TrainerRoad and Strava, merge your rides, and ask grounded questions about
-            progress, regression, load, and intensity.
-          </p>
-          <div className="form auth-form">
-            <div className="auth-toggle">
-              <button
-                className={authMode === "sign-in" ? "button" : "button secondary"}
-                onClick={() => setAuthMode("sign-in")}
-              >
-                Sign in
-              </button>
-              <button
-                className={authMode === "sign-up" ? "button" : "button secondary"}
-                onClick={() => setAuthMode("sign-up")}
-              >
-                Create account
-              </button>
-            </div>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            <button className="button" onClick={submitAuth}>
-              {authMode === "sign-in" ? "Enter dashboard" : "Create RideSense account"}
-            </button>
-            {authMessage ? <p className="lede">{authMessage}</p> : null}
-          </div>
-        </section>
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <Card className="w-[320px]">
+          <CardContent>
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-3 w-32" />
+          </CardContent>
+        </Card>
       </main>
     );
   }
 
-  if (!dashboard) {
-    return <main className="shell">Loading RideSense...</main>;
-  }
-
-  const zones = dashboard.analysis.zone_breakdown;
-  const maxZoneLoad = Math.max(...Object.values(zones).map((zone) => zone.load), 1);
-  const latestActivities = dashboard.analysis.top_workouts.slice(0, 6);
-  const stravaConnected = dashboard.connections.some((item) => item.provider === "strava");
-  const trainerRoadConnected = dashboard.connections.some((item) => item.provider === "trainerroad");
-
-  async function saveProfile() {
-    await api.saveProfile(profile, accessToken);
-    setMessage("Athlete context saved.");
-  }
-
-  async function askQuestion() {
-    const response = await api.ask(question, accessToken);
-    setAnswer(response);
-  }
-
-  async function syncAll() {
-    const run = await api.startSync("all", accessToken);
-    setMessage(run.message || `Sync ${run.status}`);
-    load();
-  }
-
-  async function linkStrava() {
-    const response = await api.startStravaLink(accessToken);
-    window.location.href = response.authorization_url;
-  }
-
-  async function linkTrainerRoad() {
-    const response = await api.startTrainerRoadLink(accessToken);
-    setMessage(response.message);
+  if (supabaseConfigured && !session) {
+    return <AuthGate onSubmit={submitAuth} message={authMessage} />;
   }
 
   return (
-    <main className="shell">
-      <header className="masthead">
-        <div>
-          <p className="eyebrow">TrainerRoad + Strava intelligence</p>
-          <h1 className="brand">RideSense</h1>
-        </div>
-        <p className="lede">
-          One merged cycling timeline for load trend, zone distribution, progression, regression,
-          and athlete-specific questions. Deterministic metrics first, AI interpretation second.
-        </p>
-        <div className="account-strip">
-          <span>{supabaseConfigured ? session?.user.email : "Demo mode"}</span>
-          {supabaseConfigured ? (
-            <button className="button secondary" onClick={signOut}>
-              Sign out
-            </button>
-          ) : null}
-        </div>
-      </header>
+    <Shell
+      active={active}
+      onNav={(id) => setActive(id as ScreenId)}
+      lastSync={lastSync}
+      syncStatus={syncStatus}
+      onSyncNow={syncAll}
+      syncing={syncing}
+    >
+      {!dashboard ? (
+        <DashboardSkeleton />
+      ) : active === "dashboard" ? (
+        <Dashboard
+          dashboard={dashboard}
+          range={range}
+          onRangeChange={setRange}
+          onSync={syncAll}
+          syncing={syncing}
+          question={question}
+          onQuestionChange={setQuestion}
+          onAsk={ask}
+          asking={asking}
+          answer={answer}
+          message={message}
+          onClearMessage={() => setMessage("")}
+        />
+      ) : active === "rides" ? (
+        <ActivitiesScreen dashboard={dashboard} />
+      ) : active === "ask" ? (
+        <AskScreen
+          question={question}
+          onChange={setQuestion}
+          onAsk={ask}
+          asking={asking}
+          answer={answer}
+        />
+      ) : active === "connections" ? (
+        <ConnectionsScreen
+          dashboard={dashboard}
+          onLinkStrava={linkStrava}
+          onLinkTrainerRoad={linkTrainerRoad}
+          onSync={syncAll}
+          syncing={syncing}
+          message={message}
+        />
+      ) : active === "profile" ? (
+        <ProfileScreen
+          email={session?.user.email ?? "Demo mode"}
+          profile={profile}
+          onChange={setProfile}
+          onSave={saveProfile}
+          saving={savingProfile}
+          onSignOut={signOut}
+          showSignOut={Boolean(supabaseConfigured && session)}
+        />
+      ) : active === "plan" ? (
+        <PlaceholderScreen
+          title="Plan"
+          subtitle="14-day calendar with planned vs actual TSS."
+          body="Coming soon: drag-to-move workouts, weekly rollups, and an end-of-block CTL/ATL/TSB projection."
+        />
+      ) : (
+        <PlaceholderScreen
+          title="Compare blocks"
+          subtitle="Block-over-block fitness and load."
+          body="Coming soon: overlay this 4-week block against the same window last cycle, with an auto-narrative of top deltas."
+        />
+      )}
+    </Shell>
+  );
+}
 
-      <section className="grid">
-        <div className="panel">
-          <h2>Current trajectory</h2>
-          <div className="metric-row">
-            <div className="metric">
-              <strong>{dashboard.analysis.summary.avg_weekly_load}</strong>
-              <span>Avg weekly load</span>
-            </div>
-            <div className="metric">
-              <strong>{dashboard.analysis.summary.trend_pct}%</strong>
-              <span>Trend</span>
-            </div>
-            <div className="metric">
-              <strong>{dashboard.analysis.meta.recent_activities}</strong>
-              <span>Recent rides</span>
-            </div>
-            <div className="metric">
-              <strong>{dashboard.analysis.summary.total_recent_load}</strong>
-              <span>Window load</span>
-            </div>
-          </div>
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 px-8 py-6">
+      <div className="flex items-end justify-between gap-6">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-7 w-56" />
         </div>
-
-        <div className="panel">
-          <h2>Connections</h2>
-          <p className="lede">
-            Strava uses OAuth. TrainerRoad linking is browser-session based and must not store a
-            TrainerRoad password.
-          </p>
-          <div className="actions">
-            <button className="button" onClick={linkStrava}>
-              {stravaConnected ? "Relink Strava" : "Link Strava"}
-            </button>
-            <button className="button secondary" onClick={linkTrainerRoad}>
-              {trainerRoadConnected ? "Relink TrainerRoad" : "Link TrainerRoad"}
-            </button>
-            <button className="button secondary" onClick={syncAll} disabled={isPending}>
-              Sync all
-            </button>
-          </div>
-          {message ? <p className="lede">{message}</p> : null}
-        </div>
-
-        <div className="panel">
-          <h2>Zone distribution</h2>
-          <div className="bars">
-            {Object.entries(zones).map(([zone, data]) => (
-              <div className="bar-row" key={zone}>
-                <span>{zone}</span>
-                <div className="bar-track">
-                  <div className="bar-fill" style={{ width: `${(data.load / maxZoneLoad) * 100}%` }} />
-                </div>
-                <span>{data.load}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2>Signals</h2>
-          {dashboard.insights.map((insight) => (
-            <article className="insight" key={insight.title}>
-              <p className="eyebrow">{insight.level}</p>
-              <h3>{insight.title}</h3>
-              <p>{insight.body}</p>
-            </article>
-          ))}
-        </div>
-
-        <div className="panel">
-          <h2>Ask your data</h2>
-          <div className="form">
-            <div className="field">
-              <label htmlFor="question">Question</label>
-              <textarea
-                id="question"
-                rows={3}
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-              />
-            </div>
-            <button className="button" onClick={askQuestion}>
-              Ask
-            </button>
-          </div>
-          {answer ? (
-            <div className="insight">
-              <p className="eyebrow">Confidence: {answer.confidence}</p>
-              <p className="answer">{answer.answer}</p>
-              {answer.evidence.map((point) => (
-                <p key={point.metric_id}>
-                  {point.label}: {point.value}
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="panel">
-          <h2>Athlete context</h2>
-          <div className="form">
-            {(["event_type", "goals", "constraints", "recovery_notes", "training_days"] as const).map((key) => (
-              <div className="field" key={key}>
-                <label htmlFor={key}>{key.replaceAll("_", " ")}</label>
-                <textarea
-                  id={key}
-                  rows={key === "goals" ? 3 : 2}
-                  value={profile[key]}
-                  onChange={(event) => setProfile({ ...profile, [key]: event.target.value })}
-                />
-              </div>
-            ))}
-            <button className="button secondary" onClick={saveProfile}>
-              Save context
-            </button>
-          </div>
-        </div>
-
-        <div className="panel" style={{ gridColumn: "1 / -1" }}>
-          <h2>Top stress contributors</h2>
-          <table className="activity-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Workout</th>
-                <th>Source</th>
-                <th>Category</th>
-                <th>Load</th>
-              </tr>
-            </thead>
-            <tbody>
-              {latestActivities.map((activity) => (
-                <tr key={activity.id}>
-                  <td>{new Date(activity.started_at).toLocaleDateString()}</td>
-                  <td>{activity.name}</td>
-                  <td>{activity.source_priority}</td>
-                  <td>{activity.workout_category ?? "Unclassified"}</td>
-                  <td>{loadForActivity(activity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
+        <Skeleton className="h-9 w-40" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+      <Skeleton className="h-64 w-full" />
+    </div>
   );
 }
