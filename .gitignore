@@ -12,3 +12,5 @@ dist/
 coverage/
 backend/data/
 backend/exports/
+.claude/
+*.tsbuildinfo
