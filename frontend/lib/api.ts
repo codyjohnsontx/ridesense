@@ -47,12 +47,19 @@ export type GroundedAnswer = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function authHeaders(token?: string): Record<string, string> {
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return { "X-User-Id": "demo-user" };
+}
+
+async function request<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": "demo-user",
+      ...authHeaders(token),
       ...(init?.headers ?? {})
     },
     cache: "no-store"
@@ -66,29 +73,49 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  dashboard: () => request<DashboardResponse>("/dashboard?weeks=12"),
-  profile: () => request<AthleteProfile>("/athlete-profile"),
-  saveProfile: (profile: AthleteProfile) =>
-    request<AthleteProfile>("/athlete-profile", {
-      method: "PUT",
-      body: JSON.stringify(profile)
-    }),
-  ask: (question: string) =>
-    request<GroundedAnswer>("/questions", {
-      method: "POST",
-      body: JSON.stringify({ question })
-    }),
-  startSync: (provider: "all" | "strava" | "trainerroad") =>
-    request<{ id: number; status: string; message: string }>("/sync-runs", {
-      method: "POST",
-      body: JSON.stringify({ provider })
-    }),
-  startStravaLink: () =>
-    request<{ authorization_url: string }>("/strava/link/start", {
-      method: "POST"
-    }),
-  startTrainerRoadLink: () =>
-    request<{ status: string; message: string }>("/trainerroad/link/start", {
-      method: "POST"
-    })
+  dashboard: (token?: string) => request<DashboardResponse>("/dashboard?weeks=12", undefined, token),
+  profile: (token?: string) => request<AthleteProfile>("/athlete-profile", undefined, token),
+  saveProfile: (profile: AthleteProfile, token?: string) =>
+    request<AthleteProfile>(
+      "/athlete-profile",
+      {
+        method: "PUT",
+        body: JSON.stringify(profile)
+      },
+      token
+    ),
+  ask: (question: string, token?: string) =>
+    request<GroundedAnswer>(
+      "/questions",
+      {
+        method: "POST",
+        body: JSON.stringify({ question })
+      },
+      token
+    ),
+  startSync: (provider: "all" | "strava" | "trainerroad", token?: string) =>
+    request<{ id: number; status: string; message: string }>(
+      "/sync-runs",
+      {
+        method: "POST",
+        body: JSON.stringify({ provider })
+      },
+      token
+    ),
+  startStravaLink: (token?: string) =>
+    request<{ authorization_url: string }>(
+      "/strava/link/start",
+      {
+        method: "POST"
+      },
+      token
+    ),
+  startTrainerRoadLink: (token?: string) =>
+    request<{ status: string; message: string }>(
+      "/trainerroad/link/start",
+      {
+        method: "POST"
+      },
+      token
+    )
 };

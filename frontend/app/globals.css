@@ -36,6 +36,28 @@ textarea {
   padding: 28px;
 }
 
+.auth-shell {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+}
+
+.auth-panel {
+  border-left: 1px solid var(--line);
+  max-width: 760px;
+  padding: 32px;
+}
+
+.auth-form {
+  margin-top: 28px;
+  max-width: 460px;
+}
+
+.auth-toggle {
+  display: flex;
+  gap: 10px;
+}
+
 .masthead {
   align-items: end;
   border-bottom: 1px solid var(--line);
@@ -44,6 +66,15 @@ textarea {
   grid-template-columns: 1.3fr 1fr;
   margin-bottom: 28px;
   padding-bottom: 28px;
+}
+
+.account-strip {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 .brand {

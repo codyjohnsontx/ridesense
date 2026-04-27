@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { api, AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
 
 const emptyProfile: AthleteProfile = {
   event_type: "",
@@ -18,22 +19,139 @@ function loadForActivity(activity: { tss: number | null; estimated_load: number 
 export function DashboardClient() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [profile, setProfile] = useState<AthleteProfile>(emptyProfile);
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [question, setQuestion] = useState("Am I trending toward better endurance fitness?");
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [message, setMessage] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const accessToken = session?.access_token;
 
   const load = () => {
     startTransition(async () => {
-      const [dashboardData, profileData] = await Promise.all([api.dashboard(), api.profile()]);
+      const [dashboardData, profileData] = await Promise.all([
+        api.dashboard(accessToken),
+        api.profile(accessToken)
+      ]);
       setDashboard(dashboardData);
       setProfile(profileData);
     });
   };
 
   useEffect(() => {
-    load();
+    if (!supabaseConfigured || !supabase) {
+      load();
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session) {
+        load();
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      if (nextSession) {
+        setDashboard(null);
+        setAuthMessage("");
+      }
+    });
+
+    return () => {
+      data.subscription.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (supabaseConfigured && session) {
+      load();
+    }
+  }, [session?.access_token]);
+
+  async function submitAuth() {
+    if (!supabase) {
+      return;
+    }
+    setAuthMessage("");
+    const result =
+      authMode === "sign-in"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
+
+    if (result.error) {
+      setAuthMessage(result.error.message);
+      return;
+    }
+
+    if (authMode === "sign-up" && !result.data.session) {
+      setAuthMessage("Check your email to confirm the account, then sign in.");
+      return;
+    }
+
+    setSession(result.data.session);
+  }
+
+  async function signOut() {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    setSession(null);
+    setDashboard(null);
+    setMessage("");
+  }
+
+  if (supabaseConfigured && !session) {
+    return (
+      <main className="shell auth-shell">
+        <section className="auth-panel">
+          <p className="eyebrow">Cycling intelligence</p>
+          <h1 className="brand">RideSense</h1>
+          <p className="lede">
+            Link TrainerRoad and Strava, merge your rides, and ask grounded questions about
+            progress, regression, load, and intensity.
+          </p>
+          <div className="form auth-form">
+            <div className="auth-toggle">
+              <button
+                className={authMode === "sign-in" ? "button" : "button secondary"}
+                onClick={() => setAuthMode("sign-in")}
+              >
+                Sign in
+              </button>
+              <button
+                className={authMode === "sign-up" ? "button" : "button secondary"}
+                onClick={() => setAuthMode("sign-up")}
+              >
+                Create account
+              </button>
+            </div>
+            <div className="field">
+              <label htmlFor="email">Email</label>
+              <input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+            <button className="button" onClick={submitAuth}>
+              {authMode === "sign-in" ? "Enter dashboard" : "Create RideSense account"}
+            </button>
+            {authMessage ? <p className="lede">{authMessage}</p> : null}
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (!dashboard) {
     return <main className="shell">Loading RideSense...</main>;
@@ -46,28 +164,28 @@ export function DashboardClient() {
   const trainerRoadConnected = dashboard.connections.some((item) => item.provider === "trainerroad");
 
   async function saveProfile() {
-    await api.saveProfile(profile);
+    await api.saveProfile(profile, accessToken);
     setMessage("Athlete context saved.");
   }
 
   async function askQuestion() {
-    const response = await api.ask(question);
+    const response = await api.ask(question, accessToken);
     setAnswer(response);
   }
 
   async function syncAll() {
-    const run = await api.startSync("all");
+    const run = await api.startSync("all", accessToken);
     setMessage(run.message || `Sync ${run.status}`);
     load();
   }
 
   async function linkStrava() {
-    const response = await api.startStravaLink();
+    const response = await api.startStravaLink(accessToken);
     window.location.href = response.authorization_url;
   }
 
   async function linkTrainerRoad() {
-    const response = await api.startTrainerRoadLink();
+    const response = await api.startTrainerRoadLink(accessToken);
     setMessage(response.message);
   }
 
@@ -82,6 +200,14 @@ export function DashboardClient() {
           One merged cycling timeline for load trend, zone distribution, progression, regression,
           and athlete-specific questions. Deterministic metrics first, AI interpretation second.
         </p>
+        <div className="account-strip">
+          <span>{supabaseConfigured ? session?.user.email : "Demo mode"}</span>
+          {supabaseConfigured ? (
+            <button className="button secondary" onClick={signOut}>
+              Sign out
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <section className="grid">

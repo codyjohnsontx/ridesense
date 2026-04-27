@@ -29,6 +29,10 @@ pnpm dev
 
 In development, set `DEV_AUTH_ENABLED=true` and the frontend/backend will use a stable demo user unless a real bearer token is provided.
 
+To enable real auth locally, create a Supabase project, set `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`, and set `DEV_AUTH_ENABLED=false`
+for the backend.
+
 ## Provider Strategy
 
 - Strava uses official OAuth and stores encrypted access/refresh tokens.
