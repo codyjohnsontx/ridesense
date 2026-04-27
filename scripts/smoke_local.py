@@ -54,15 +54,26 @@ def wait_for_url(url: str, timeout: float = 45) -> None:
 def start_process(cmd: list[str], env: dict[str, str], cwd: Path) -> ManagedProcess:
     stdout_handle: IO[str] = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
     stderr_handle: IO[str] = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
-    proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        env=env,
-        text=True,
-        stdout=stdout_handle,
-        stderr=stderr_handle,
-        start_new_session=True,
-    )
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            start_new_session=True,
+        )
+    except Exception:
+        stdout_path = stdout_handle.name
+        stderr_path = stderr_handle.name
+        stdout_handle.close()
+        stderr_handle.close()
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(stdout_path)
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(stderr_path)
+        raise
     return ManagedProcess(
         proc=proc,
         stdout_path=Path(stdout_handle.name),
@@ -103,6 +114,12 @@ def cleanup_logs(*managed_processes: ManagedProcess) -> None:
             managed.stdout_path.unlink()
         with contextlib.suppress(FileNotFoundError):
             managed.stderr_path.unlink()
+
+
+def stop_and_cleanup(*managed_processes: ManagedProcess) -> None:
+    for managed in reversed(managed_processes):
+        stop_process(managed)
+    cleanup_logs(*managed_processes)
 
 
 def main() -> int:
@@ -146,19 +163,32 @@ def main() -> int:
         )
 
         print(f"Starting backend on {backend_url}", flush=True)
-        backend = start_process(
-            [str(BACKEND_PYTHON), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(backend_port)],
-            env,
-            ROOT / "backend",
-        )
-        print(f"Starting frontend on {frontend_url}", flush=True)
-        frontend = start_process(
-            ["pnpm", "dev", "--hostname", "127.0.0.1", "--port", str(frontend_port)],
-            env,
-            ROOT / "frontend",
-        )
+        started_processes: list[ManagedProcess] = []
 
         try:
+            backend = start_process(
+                [
+                    str(BACKEND_PYTHON),
+                    "-m",
+                    "uvicorn",
+                    "app.main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(backend_port),
+                ],
+                env,
+                ROOT / "backend",
+            )
+            started_processes.append(backend)
+            print(f"Starting frontend on {frontend_url}", flush=True)
+            frontend = start_process(
+                ["pnpm", "dev", "--hostname", "127.0.0.1", "--port", str(frontend_port)],
+                env,
+                ROOT / "frontend",
+            )
+            started_processes.append(frontend)
+
             print("Waiting for servers...", flush=True)
             wait_for_url(f"{backend_url}/health")
             wait_for_url(frontend_url, timeout=60)
@@ -209,13 +239,11 @@ def main() -> int:
             print(f"Smoke passed: {frontend_url}")
             return 0
         except Exception:
-            dump_recent_output("backend", backend)
-            dump_recent_output("frontend", frontend)
+            for name, managed in zip(("backend", "frontend"), started_processes):
+                dump_recent_output(name, managed)
             raise
         finally:
-            stop_process(frontend)
-            stop_process(backend)
-            cleanup_logs(frontend, backend)
+            stop_and_cleanup(*started_processes)
 
 
 if __name__ == "__main__":
