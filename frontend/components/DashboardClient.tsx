@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { api, AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/api";
 import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
 import { AuthGate } from "./AuthGate";
@@ -28,9 +28,11 @@ const WEEKS_FOR_RANGE: Record<Range, number> = {
 
 function pickLastSync(d: DashboardResponse | null) {
   if (!d) return null;
-  const stamps = d.connections.map((c) => c.updated_at).filter(Boolean);
+  const stamps = d.connections
+    .map((c) => c.updated_at)
+    .filter((s): s is string => Boolean(s));
   if (stamps.length === 0) return null;
-  return stamps.sort().reverse()[0];
+  return stamps.reduce((a, b) => (a > b ? a : b));
 }
 
 export function DashboardClient() {
@@ -49,18 +51,22 @@ export function DashboardClient() {
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [, startLoad] = useTransition();
   const accessToken = session?.access_token;
+  const loadVersion = useRef(0);
 
   const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
     const token = overrideToken ?? accessToken;
+    const thisVersion = ++loadVersion.current;
     startLoad(async () => {
       try {
         const [dashboardData, profileData] = await Promise.all([
           api.dashboard(weeks, token),
           api.profile(token)
         ]);
+        if (loadVersion.current !== thisVersion) return;
         setDashboard(dashboardData);
         setProfile(profileData);
       } catch (err) {
+        if (loadVersion.current !== thisVersion) return;
         setMessage(err instanceof Error ? err.message : "Failed to load dashboard.");
       }
     });

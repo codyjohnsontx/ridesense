@@ -169,7 +169,9 @@ export function Dashboard({
             <CardHeader className="flex-row flex-wrap items-end justify-between gap-2 px-5 pt-4">
               <div>
                 <CardTitle>Form / fitness curve</CardTitle>
-                <CardDescription className="mt-0.5">84-day rolling window · CTL · ATL · TSB</CardDescription>
+                <CardDescription className="mt-0.5">
+                  {rangeDays}-day rolling window · CTL · ATL · TSB
+                </CardDescription>
               </div>
               <div className="mono flex flex-wrap gap-3.5 text-[11.5px]">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -357,8 +359,8 @@ export function Dashboard({
                   ) : null}
                   {answer.caveats.length > 0 ? (
                     <ul className="m-0 list-disc pl-5 text-[11.5px] text-muted-foreground">
-                      {answer.caveats.map((c) => (
-                        <li key={c}>{c}</li>
+                      {answer.caveats.map((c, i) => (
+                        <li key={`${c}-${i}`}>{c}</li>
                       ))}
                     </ul>
                   ) : null}
