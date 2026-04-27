@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,9 @@ def _client(tmp_path, monkeypatch):
 
 
 def _seed_activity(user_id="demo-user"):
+    now = datetime.now(timezone.utc)
+    threshold_started_at = (now - timedelta(days=7)).isoformat()
+    endurance_started_at = (now - timedelta(days=14)).isoformat()
     repository.upsert_provider_activity(
         user_id,
         ActivityIn(
@@ -22,7 +26,7 @@ def _seed_activity(user_id="demo-user"):
             provider_activity_id="tr-api-1",
             name="API Threshold",
             sport_type="Cycling",
-            started_at="2026-04-20T12:00:00+00:00",
+            started_at=threshold_started_at,
             duration_seconds=3600,
             tss=95,
             workout_category="Threshold",
@@ -35,7 +39,7 @@ def _seed_activity(user_id="demo-user"):
             provider_activity_id="st-api-1",
             name="API Endurance",
             sport_type="Ride",
-            started_at="2026-04-21T12:00:00+00:00",
+            started_at=endurance_started_at,
             duration_seconds=5400,
             estimated_load=70,
             workout_category="Endurance",
@@ -54,7 +58,18 @@ def test_dashboard_and_activities_return_seeded_data(tmp_path, monkeypatch):
     assert dashboard["analysis"]["meta"]["total_activities"] == 2
     assert dashboard["analysis"]["summary"]["total_recent_load"] == 165
     assert len(activities["activities"]) == 2
-    assert activities["activities"][0]["name"] == "API Endurance"
+    assert activities["activities"][0]["name"] == "API Threshold"
+
+
+def test_activities_support_offset_pagination(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _seed_activity()
+
+    first_page = client.get("/activities?limit=1").json()
+    second_page = client.get("/activities?limit=1&offset=1").json()
+
+    assert [a["name"] for a in first_page["activities"]] == ["API Threshold"]
+    assert [a["name"] for a in second_page["activities"]] == ["API Endurance"]
 
 
 def test_profile_save_load_round_trip(tmp_path, monkeypatch):

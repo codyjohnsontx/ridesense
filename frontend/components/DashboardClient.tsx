@@ -60,12 +60,17 @@ export function DashboardClient() {
     const thisVersion = ++loadVersion.current;
     startLoad(async () => {
       try {
-        const [dashboardData, profileData, activitiesData, configData] = await Promise.all([
+        const [dashboardData, profileData, activitiesData] = await Promise.all([
           api.dashboard(weeks, token),
           api.profile(token),
-          api.activities(token),
-          api.configStatus(token)
+          api.activities(token)
         ]);
+        let configData: ConfigStatus | null = null;
+        try {
+          configData = await api.configStatus(token);
+        } catch {
+          configData = null;
+        }
         if (loadVersion.current !== thisVersion) return;
         setDashboard(dashboardData);
         setProfile(profileData);

@@ -175,8 +175,12 @@ def put_profile(profile: AthleteProfile, user_id: UserId) -> AthleteProfile:
 
 
 @app.get("/activities")
-def activities(user_id: UserId, limit: int = Query(200, ge=1, le=1000)) -> dict:
-    return {"activities": repository.list_canonical_activities(user_id, limit=limit)}
+def activities(
+    user_id: UserId,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return {"activities": repository.list_canonical_activities(user_id, limit=limit, offset=offset)}
 
 
 @app.get("/dashboard")

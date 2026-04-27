@@ -215,16 +215,16 @@ def list_provider_activities(user_id: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def list_canonical_activities(user_id: str, limit: int = 500) -> list[dict[str, Any]]:
+def list_canonical_activities(user_id: str, limit: int = 500, offset: int = 0) -> list[dict[str, Any]]:
     with connect() as conn:
         rows = conn.execute(
             """
             SELECT * FROM canonical_activities
             WHERE user_id = ?
             ORDER BY started_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (user_id, limit),
+            (user_id, limit, offset),
         ).fetchall()
     return [dict(row) for row in rows]
 

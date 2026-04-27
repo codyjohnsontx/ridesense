@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -18,6 +19,15 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_PYTHON = ROOT / "backend" / ".venv" / "bin" / "python"
+
+
+@dataclass
+class ManagedProcess:
+    proc: subprocess.Popen[str]
+    stdout_path: Path
+    stderr_path: Path
+    stdout_file: object
+    stderr_file: object
 
 
 def free_port() -> int:
@@ -40,37 +50,58 @@ def wait_for_url(url: str, timeout: float = 45) -> None:
     raise RuntimeError(f"Timed out waiting for {url}: {last_error}")
 
 
-def start_process(cmd: list[str], env: dict[str, str], cwd: Path) -> subprocess.Popen[str]:
-    return subprocess.Popen(
+def start_process(cmd: list[str], env: dict[str, str], cwd: Path) -> ManagedProcess:
+    stdout_handle = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
+    stderr_handle = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
+    proc = subprocess.Popen(
         cmd,
         cwd=cwd,
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=stdout_handle,
+        stderr=stderr_handle,
         start_new_session=True,
+    )
+    return ManagedProcess(
+        proc=proc,
+        stdout_path=Path(stdout_handle.name),
+        stderr_path=Path(stderr_handle.name),
+        stdout_file=stdout_handle,
+        stderr_file=stderr_handle,
     )
 
 
-def stop_process(proc: subprocess.Popen[str]) -> None:
-    if proc.poll() is not None:
-        return
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGTERM)
-    try:
-        proc.wait(timeout=8)
-    except subprocess.TimeoutExpired:
+def stop_process(managed: ManagedProcess) -> None:
+    proc = managed.proc
+    if proc.poll() is None:
         with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGKILL)
-
-
-def dump_recent_output(name: str, proc: subprocess.Popen[str]) -> None:
-    if proc.stdout is None:
-        return
+            os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=8)
     with contextlib.suppress(Exception):
-        output = proc.stdout.read()
-        if output:
-            print(f"\n{name} output:\n{output[-4000:]}", file=sys.stderr)
+        managed.stdout_file.close()
+    with contextlib.suppress(Exception):
+        managed.stderr_file.close()
+
+
+def dump_recent_output(name: str, managed: ManagedProcess) -> None:
+    for stream, path in (("stdout", managed.stdout_path), ("stderr", managed.stderr_path)):
+        with contextlib.suppress(Exception):
+            output = path.read_text(encoding="utf-8")
+            if output:
+                print(f"\n{name} {stream}:\n{output[-4000:]}", file=sys.stderr)
+
+
+def cleanup_logs(*managed_processes: ManagedProcess) -> None:
+    for managed in managed_processes:
+        with contextlib.suppress(FileNotFoundError):
+            managed.stdout_path.unlink()
+        with contextlib.suppress(FileNotFoundError):
+            managed.stderr_path.unlink()
 
 
 def main() -> int:
@@ -167,7 +198,9 @@ def main() -> int:
                 expect(page.get_by_role("button", name="Strava not configured")).to_be_disabled()
                 expect(page.get_by_role("button", name="TrainerRoad scaffolded")).to_be_visible()
                 page.get_by_role("button", name="Sync all").click()
-                expect(page.get_by_text("Imported 0 Strava and 0 TrainerRoad activities.")).to_be_visible(timeout=10000)
+                expect(page.get_by_text("Imported 0 Strava and 0 TrainerRoad activities.").first).to_be_visible(
+                    timeout=10000
+                )
                 expect(page.get_by_text("completed")).to_be_visible(timeout=10000)
 
                 browser.close()
@@ -183,6 +216,7 @@ def main() -> int:
         finally:
             stop_process(frontend)
             stop_process(backend)
+            cleanup_logs(frontend, backend)
 
 
 if __name__ == "__main__":
