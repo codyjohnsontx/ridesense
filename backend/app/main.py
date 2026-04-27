@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -62,23 +64,53 @@ def strava_link_start(user_id: UserId) -> dict[str, str]:
 
 
 @app.get("/strava/oauth/callback")
-def strava_oauth_callback(code: str, state: str) -> RedirectResponse:
-    # The sealed state contains the user id and is tamper-evident for local MVP.
+def strava_oauth_callback(
+    state: str,
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    if error:
+        return _frontend_redirect("strava", "error", f"Strava authorization failed: {error}")
+
+    if not code:
+        return _frontend_redirect("strava", "error", "Missing Strava authorization code.")
+
     from app.security import open_json
 
-    data = open_json(state)
-    user_id = data["user_id"]
-    token_payload = strava.exchange_code(code)
+    try:
+        data = open_json(state)
+        user_id = data["user_id"]
+    except Exception:
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+
+    try:
+        token_payload = strava.exchange_code(code)
+    except Exception:
+        return _frontend_redirect("strava", "error", "Unable to exchange Strava authorization code.")
+
+    if not strava.has_required_scopes(token_payload):
+        return _frontend_redirect(
+            "strava",
+            "error",
+            "RideSense needs Strava activity read access to import cycling history.",
+        )
+
     athlete = token_payload.get("athlete") or {}
+    scopes = ",".join(sorted(strava.accepted_scopes(token_payload)))
     repository.save_connection(
         user_id=user_id,
         provider="strava",
         encrypted_secret=seal_json(token_payload),
         external_athlete_id=str(athlete.get("id") or ""),
-        scopes="read,activity:read_all,profile:read_all",
+        scopes=scopes,
         expires_at=token_payload.get("expires_at"),
     )
-    return RedirectResponse(f"{settings.frontend_origin}/integrations?linked=strava")
+    return _frontend_redirect("strava", "connected", "Strava connected.")
+
+
+def _frontend_redirect(provider: str, status: str, message: str) -> RedirectResponse:
+    query = urlencode({"provider": provider, "status": status, "message": message})
+    return RedirectResponse(f"{settings.frontend_origin}/?{query}")
 
 
 @app.post("/trainerroad/link/start")

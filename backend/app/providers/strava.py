@@ -10,6 +10,8 @@ from app.config import settings
 AUTH_URL = "https://www.strava.com/oauth/authorize"
 TOKEN_URL = "https://www.strava.com/oauth/token"
 API_URL = "https://www.strava.com/api/v3"
+REQUIRED_SCOPES = {"read", "activity:read_all"}
+REQUESTED_SCOPES = "read,activity:read_all,profile:read_all"
 
 
 def authorization_url(state: str) -> str:
@@ -18,10 +20,23 @@ def authorization_url(state: str) -> str:
         "redirect_uri": settings.strava_redirect_uri,
         "response_type": "code",
         "approval_prompt": "auto",
-        "scope": "read,activity:read_all,profile:read_all",
+        "scope": REQUESTED_SCOPES,
         "state": state,
     }
     return f"{AUTH_URL}?{urlencode(params)}"
+
+
+def accepted_scopes(payload: dict) -> set[str]:
+    scope_value = payload.get("scope") or REQUESTED_SCOPES
+    if isinstance(scope_value, str):
+        return {scope.strip() for scope in scope_value.split(",") if scope.strip()}
+    if isinstance(scope_value, list):
+        return {str(scope).strip() for scope in scope_value if str(scope).strip()}
+    return set()
+
+
+def has_required_scopes(payload: dict) -> bool:
+    return REQUIRED_SCOPES.issubset(accepted_scopes(payload))
 
 
 def exchange_code(code: str) -> dict:
