@@ -20,10 +20,18 @@ The local backend uses SQLite for fast iteration. Production targets Supabase Po
 One-time:
 
 ```bash
+# from the repo root — this .env is read by the backend (python-dotenv
+# walks up from the backend cwd) and is the single source of truth for
+# all server-side variables (DATABASE_URL, STRAVA_*, OPENAI_*, etc.)
 cp .env.example .env
+```
+
+```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # macOS / Linux
+# Windows PowerShell:  .venv\Scripts\Activate.ps1
+# Windows cmd.exe:     .venv\Scripts\activate.bat
 pip install -r requirements.txt
 ```
 
@@ -32,12 +40,19 @@ cd frontend
 pnpm install
 ```
 
+Next.js does **not** read the repo-root `.env` — it only loads env files from
+`frontend/`. The `NEXT_PUBLIC_*` defaults in `frontend/lib/api.ts` are enough
+for local dev, so a frontend env file is optional. If you need to override
+them (e.g. point at a non-default API URL or wire Supabase), create
+`frontend/.env.local` with the relevant `NEXT_PUBLIC_*` values from
+`.env.example`.
+
 Run (two terminals):
 
 ```bash
 # terminal 1 — backend
 cd backend
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload
 ```
 
