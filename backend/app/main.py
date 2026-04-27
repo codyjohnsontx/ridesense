@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Query
@@ -19,6 +20,8 @@ from app.services.insights import generate_insights
 from app.services.merge import rebuild_canonical_activities
 from app.services.sync import sync_provider
 
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Training Insights API", version="0.1.0")
 app.add_middleware(
@@ -65,7 +68,7 @@ def strava_link_start(user_id: UserId) -> dict[str, str]:
 
 @app.get("/strava/oauth/callback")
 def strava_oauth_callback(
-    state: str,
+    state: str | None = None,
     code: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
@@ -76,6 +79,9 @@ def strava_oauth_callback(
         return _frontend_redirect("strava", "error", "Missing Strava authorization code.")
 
     from app.security import open_json
+
+    if not state:
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
 
     try:
         data = open_json(state)
@@ -90,6 +96,9 @@ def strava_oauth_callback(
     except Exception:
         return _frontend_redirect("strava", "error", "Unable to exchange Strava authorization code.")
 
+    if not isinstance(token_payload, dict):
+        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+
     if not strava.has_required_scopes(token_payload):
         return _frontend_redirect(
             "strava",
@@ -97,16 +106,23 @@ def strava_oauth_callback(
             "RideSense needs Strava activity read access to import cycling history.",
         )
 
+    if not token_payload.get("access_token") or not token_payload.get("refresh_token"):
+        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+
     athlete = token_payload.get("athlete") or {}
     scopes = ",".join(sorted(strava.accepted_scopes(token_payload)))
-    repository.save_connection(
-        user_id=user_id,
-        provider="strava",
-        encrypted_secret=seal_json(token_payload),
-        external_athlete_id=str(athlete.get("id") or ""),
-        scopes=scopes,
-        expires_at=token_payload.get("expires_at"),
-    )
+    try:
+        repository.save_connection(
+            user_id=user_id,
+            provider="strava",
+            encrypted_secret=seal_json(token_payload),
+            external_athlete_id=str(athlete.get("id") or ""),
+            scopes=scopes,
+            expires_at=token_payload.get("expires_at"),
+        )
+    except Exception:
+        logger.exception("Failed to persist Strava connection")
+        return _frontend_redirect("strava", "error", "Unable to save Strava connection.")
     return _frontend_redirect("strava", "connected", "Strava connected.")
 
 
