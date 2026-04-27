@@ -1,6 +1,6 @@
 "use client";
 
-import type { AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import type { Activity, AthleteProfile, ConfigStatus, DashboardResponse, GroundedAnswer } from "@/lib/api";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Textarea } from "./ui";
@@ -15,8 +15,7 @@ function formatDuration(seconds: number) {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-export function ActivitiesScreen({ dashboard }: { dashboard: DashboardResponse }) {
-  const activities = dashboard.analysis.top_workouts;
+export function ActivitiesScreen({ activities }: { activities: Activity[] }) {
   return (
     <>
       <PageHeader eyebrow="Merged feed" title="Activities" subtitle="TrainerRoad and Strava on a single timeline." />
@@ -80,6 +79,7 @@ export function ConnectionsScreen({
   onLinkTrainerRoad,
   onSync,
   syncing,
+  config,
   message
 }: {
   dashboard: DashboardResponse;
@@ -87,6 +87,7 @@ export function ConnectionsScreen({
   onLinkTrainerRoad: () => void;
   onSync: () => void;
   syncing: boolean;
+  config: ConfigStatus | null;
   message?: string;
 }) {
   const stravaConnection = dashboard.connections.find((c) => c.provider === "strava");
@@ -99,7 +100,13 @@ export function ConnectionsScreen({
       description: "OAuth · activity feed, GPS, HR, power.",
       connection: stravaConnection,
       action: onLinkStrava,
-      cta: stravaConnection ? "Relink Strava" : "Link Strava"
+      cta:
+        config && !config.strava_configured
+          ? "Strava not configured"
+          : stravaConnection
+            ? "Relink Strava"
+            : "Link Strava",
+      disabled: Boolean(config && !config.strava_configured)
     },
     {
       key: "trainerroad",
@@ -107,9 +114,17 @@ export function ConnectionsScreen({
       description: "Browser-session linking · workouts, planned TSS, ramp tests.",
       connection: trConnection,
       action: onLinkTrainerRoad,
-      cta: trConnection ? "Relink TrainerRoad" : "Link TrainerRoad"
+      cta:
+        config?.trainerroad_linking_configured
+          ? trConnection
+            ? "Relink TrainerRoad"
+            : "Link TrainerRoad"
+          : "TrainerRoad scaffolded",
+      disabled: false
     }
   ];
+
+  const successfulSyncStatuses = new Set(["ok", "succeeded", "completed"]);
 
   return (
     <>
@@ -154,7 +169,7 @@ export function ConnectionsScreen({
                   ) : (
                     <div className="text-[12.5px] text-muted-foreground">Not yet linked.</div>
                   )}
-                  <Button variant="outline" size="sm" onClick={c.action}>
+                  <Button variant="outline" size="sm" onClick={c.action} disabled={c.disabled}>
                     <Icon name="plug" size={13} />
                     {c.cta}
                   </Button>
@@ -194,7 +209,7 @@ export function ConnectionsScreen({
                     </td>
                     <td className="px-4 py-3">
                       <Badge
-                        variant={r.status === "ok" || r.status === "succeeded" ? "success" : "warning"}
+                        variant={successfulSyncStatuses.has(r.status) ? "success" : "warning"}
                         className="text-[10.5px]"
                       >
                         {r.status}
@@ -226,7 +241,8 @@ export function ProfileScreen({
   onSave,
   saving,
   onSignOut,
-  showSignOut
+  showSignOut,
+  message
 }: {
   email?: string;
   profile: AthleteProfile;
@@ -235,6 +251,7 @@ export function ProfileScreen({
   saving: boolean;
   onSignOut?: () => void;
   showSignOut?: boolean;
+  message?: string;
 }) {
   const fields: Array<{ key: keyof AthleteProfile; label: string; rows: number }> = [
     { key: "event_type", label: "Event type", rows: 2 },
@@ -258,6 +275,9 @@ export function ProfileScreen({
         }
       />
       <div className="grid grid-cols-1 gap-4 px-8 py-5 md:grid-cols-[1fr_1.5fr]">
+        {message ? (
+          <Card className="px-4 py-3 text-[13px] text-muted-foreground md:col-span-2">{message}</Card>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle>Identity</CardTitle>

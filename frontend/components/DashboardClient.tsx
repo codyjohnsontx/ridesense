@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { api, AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import { Activity, api, AthleteProfile, ConfigStatus, DashboardResponse, GroundedAnswer } from "@/lib/api";
 import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
 import { AuthGate } from "./AuthGate";
 import { Dashboard, formatLastSync } from "./Dashboard";
@@ -37,6 +37,8 @@ function pickLastSync(d: DashboardResponse | null) {
 
 export function DashboardClient() {
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null);
   const [profile, setProfile] = useState<AthleteProfile>(emptyProfile);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authMessage, setAuthMessage] = useState("");
@@ -52,24 +54,51 @@ export function DashboardClient() {
   const [, startLoad] = useTransition();
   const accessToken = session?.access_token;
   const loadVersion = useRef(0);
+  const staticLoadVersion = useRef(0);
 
-  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
+  const loadDashboard = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
     const token = overrideToken ?? accessToken;
     const thisVersion = ++loadVersion.current;
     startLoad(async () => {
       try {
-        const [dashboardData, profileData] = await Promise.all([
-          api.dashboard(weeks, token),
-          api.profile(token)
-        ]);
+        const dashboardData = await api.dashboard(weeks, token);
         if (loadVersion.current !== thisVersion) return;
         setDashboard(dashboardData);
-        setProfile(profileData);
       } catch (err) {
         if (loadVersion.current !== thisVersion) return;
         setMessage(err instanceof Error ? err.message : "Failed to load dashboard.");
       }
     });
+  };
+
+  const loadStaticData = (overrideToken?: string) => {
+    const token = overrideToken ?? accessToken;
+    const thisVersion = ++staticLoadVersion.current;
+    startLoad(async () => {
+      try {
+        const [profileData, activitiesData] = await Promise.all([api.profile(token), api.activities(token)]);
+        let configData: ConfigStatus | null = null;
+        try {
+          configData = await api.configStatus(token);
+        } catch {
+          configData = null;
+        }
+        if (staticLoadVersion.current !== thisVersion) return;
+        setProfile(profileData);
+        setActivities(activitiesData.activities);
+        setConfigStatus(configData);
+      } catch (err) {
+        if (staticLoadVersion.current !== thisVersion) return;
+        setMessage(err instanceof Error ? err.message : "Failed to load athlete data.");
+      }
+    });
+  };
+
+  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range], includeStatic = true) => {
+    loadDashboard(overrideToken, weeks);
+    if (includeStatic) {
+      loadStaticData(overrideToken);
+    }
   };
 
   useEffect(() => {
@@ -118,7 +147,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!dashboard) return;
-    load();
+    loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
@@ -147,6 +176,7 @@ export function DashboardClient() {
     }
     setSession(null);
     setDashboard(null);
+    setActivities([]);
     setMessage("");
   }
 
@@ -155,7 +185,7 @@ export function DashboardClient() {
     try {
       const run = await api.startSync("all", accessToken);
       setMessage(run.message || `Sync ${run.status}`);
-      load();
+      load(accessToken, WEEKS_FOR_RANGE[range], true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Sync failed.");
     } finally {
@@ -167,13 +197,42 @@ export function DashboardClient() {
     if (!question.trim()) return;
     setAsking(true);
     try {
-      const response = await api.ask(question, accessToken);
+      const response = await api.ask(question, WEEKS_FOR_RANGE[range], accessToken);
       setAnswer(response);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Ask failed.");
     } finally {
       setAsking(false);
     }
+  }
+
+  function exportActivities() {
+    const headers = ["Date", "Workout", "Sport", "Source", "Category", "Duration seconds", "TSS", "Estimated load"];
+    const safeCsvCell = (cell: string) => {
+      const safeValue = /^[=+\-@]/.test(cell) ? `'${cell}` : cell;
+      return `"${safeValue.replaceAll('"', '""')}"`;
+    };
+    const rows = activities.map((a) => [
+      a.started_at,
+      a.name,
+      a.sport_type,
+      a.source_priority,
+      a.workout_category ?? "",
+      String(a.duration_seconds),
+      a.tss == null ? "" : String(a.tss),
+      a.estimated_load == null ? "" : String(a.estimated_load)
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map(safeCsvCell).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "ridesense-activities.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+    setMessage(`Exported ${activities.length} activities.`);
   }
 
   async function saveProfile() {
@@ -258,11 +317,13 @@ export function DashboardClient() {
           onAsk={ask}
           asking={asking}
           answer={answer}
+          activities={activities}
+          onExport={exportActivities}
           message={message}
           onClearMessage={() => setMessage("")}
         />
       ) : active === "rides" ? (
-        <ActivitiesScreen dashboard={dashboard} />
+        <ActivitiesScreen activities={activities} />
       ) : active === "ask" ? (
         <AskScreen
           question={question}
@@ -278,6 +339,7 @@ export function DashboardClient() {
           onLinkTrainerRoad={linkTrainerRoad}
           onSync={syncAll}
           syncing={syncing}
+          config={configStatus}
           message={message}
         />
       ) : active === "profile" ? (
@@ -289,6 +351,7 @@ export function DashboardClient() {
           saving={savingProfile}
           onSignOut={signOut}
           showSignOut={Boolean(supabaseConfigured && session)}
+          message={message}
         />
       ) : active === "plan" ? (
         <PlaceholderScreen
