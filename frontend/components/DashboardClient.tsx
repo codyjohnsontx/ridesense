@@ -5,7 +5,7 @@ import { api, AthleteProfile, DashboardResponse, GroundedAnswer } from "@/lib/ap
 import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
 import { AuthGate } from "./AuthGate";
 import { Dashboard, formatLastSync } from "./Dashboard";
-import { Shell } from "./Shell";
+import { Shell, type ScreenId } from "./Shell";
 import { Card, CardContent, Skeleton } from "./ui";
 import { ActivitiesScreen, AskScreen, ConnectionsScreen, PlaceholderScreen, ProfileScreen } from "./screens";
 
@@ -16,8 +16,6 @@ const emptyProfile: AthleteProfile = {
   recovery_notes: "",
   training_days: ""
 };
-
-type ScreenId = "dashboard" | "rides" | "plan" | "compare" | "ask" | "connections" | "profile";
 
 function pickLastSync(d: DashboardResponse | null) {
   if (!d) return null;
@@ -216,7 +214,7 @@ export function DashboardClient() {
   return (
     <Shell
       active={active}
-      onNav={(id) => setActive(id as ScreenId)}
+      onNav={setActive}
       lastSync={lastSync}
       syncStatus={syncStatus}
       onSyncNow={syncAll}

@@ -210,7 +210,10 @@ export function ZoneStackBar({
 
 export function WeekHeatmap({ daily, w = 360, h = 62 }: { daily: number[]; w?: number; h?: number }) {
   const weeks = Math.max(1, Math.ceil(daily.length / 7));
-  const cell = Math.max(6, Math.floor(w / weeks) - 2);
+  const rows = 7;
+  const maxCellByHeight = (h - (rows - 1)) / (rows * 0.8);
+  const cellByWidth = Math.floor(w / weeks) - 2;
+  const cell = Math.min(Math.max(6, cellByWidth), Math.floor(maxCellByHeight));
   const max = Math.max(...daily, 1);
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} style={{ display: "block" }}>

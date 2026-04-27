@@ -27,11 +27,13 @@ const buttonSizes: Record<ButtonSize, string> = {
 export function Button({
   variant = "default",
   size = "default",
+  type,
   className,
   ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
   return (
     <button
+      type={type ?? "button"}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
         buttonVariants[variant],
@@ -108,7 +110,7 @@ export function Input({
     <div className={cn("flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3", className)}>
       {icon ? <span className="text-muted-foreground">{icon}</span> : null}
       <input
-        className="w-full border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+        className="w-full border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         {...rest}
       />
     </div>
@@ -119,7 +121,7 @@ export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLText
   return (
     <textarea
       className={cn(
-        "w-full resize-y rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground",
+        "w-full resize-y rounded-md border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         className
       )}
       {...rest}
@@ -149,6 +151,7 @@ export function Tabs({
         return (
           <button
             key={v}
+            type="button"
             onClick={() => onChange?.(v)}
             className={cn(
               "rounded-sm border-0 px-3 py-[5px] text-[13px] font-medium transition-colors cursor-pointer",
@@ -174,11 +177,11 @@ export function Skeleton({ className }: { className?: string }) {
 }
 
 export function Delta({ value, suffix = "%" }: { value: number; suffix?: string }) {
-  const pos = value > 0;
+  const nonNegative = value >= 0;
   return (
-    <Badge variant={pos ? "success" : "destructive"} className="px-1.5 py-px text-[11px]">
-      <Icon name={pos ? "trendUp" : "trendDn"} size={11} stroke={2} />
-      {pos ? "+" : ""}
+    <Badge variant={nonNegative ? "success" : "destructive"} className="px-1.5 py-px text-[11px]">
+      <Icon name={nonNegative ? "trendUp" : "trendDn"} size={11} stroke={2} />
+      {value > 0 ? "+" : ""}
       {value}
       {suffix}
     </Badge>

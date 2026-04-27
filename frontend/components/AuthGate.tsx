@@ -16,7 +16,9 @@ export function AuthGate({
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  async function handle() {
+  async function handle(event?: { preventDefault?: () => void }) {
+    event?.preventDefault?.();
+    if (submitting || !email || !password) return;
     setSubmitting(true);
     try {
       await onSubmit(mode, email, password);
@@ -63,24 +65,26 @@ export function AuthGate({
               Create account
             </Button>
           </div>
-          <div className="flex flex-col gap-2.5">
-            <label htmlFor="email" className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Email
-            </label>
-            <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <label htmlFor="password" className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </div>
-          <Button variant="default" onClick={handle} disabled={submitting || !email || !password}>
-            {submitting ? "…" : mode === "sign-in" ? "Enter dashboard" : "Create RideSense account"}
-          </Button>
+          <form onSubmit={handle} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2.5">
+              <label htmlFor="email" className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Email
+              </label>
+              <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <label htmlFor="password" className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Password
+              </label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+            <Button type="submit" variant="default" disabled={submitting || !email || !password}>
+              {submitting ? "…" : mode === "sign-in" ? "Enter dashboard" : "Create RideSense account"}
+            </Button>
+          </form>
           {message ? (
             <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
               <Badge variant="outline">Status</Badge>

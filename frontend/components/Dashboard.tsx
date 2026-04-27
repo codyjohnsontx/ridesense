@@ -56,9 +56,10 @@ export function Dashboard({
   const verdict = deriveVerdict(form, dashboard.analysis.weekly);
   const weekly = dashboard.analysis.weekly;
   const recentWeekLoad = Math.round(weekly[weekly.length - 1]?.load ?? dashboard.analysis.summary.latest_week_load);
+  const priorCount = Math.max(0, weekly.length - 1);
   const priorAvg =
-    weekly.length > 1
-      ? weekly.slice(0, -1).reduce((a, b) => a + b.load, 0) / Math.max(1, weekly.length - 1)
+    priorCount > 0
+      ? weekly.slice(0, -1).reduce((a, b) => a + b.load, 0) / priorCount
       : dashboard.analysis.summary.avg_weekly_load;
   const weekDeltaPct =
     priorAvg > 0 ? Math.round(((recentWeekLoad - priorAvg) / priorAvg) * 100) : dashboard.analysis.summary.trend_pct;
@@ -219,7 +220,7 @@ export function Dashboard({
                 <Delta value={weekDeltaPct} />
               </div>
               <span className="text-[11.5px] text-muted-foreground">
-                vs prior {weekly.length - 1}-wk avg · {Math.round(priorAvg)} TSS
+                vs prior {priorCount}-wk avg · {Math.round(priorAvg)} TSS
               </span>
               <WeeklyLoadChart weekly={weekly} h={110} />
             </CardContent>

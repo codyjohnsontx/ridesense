@@ -4,7 +4,16 @@ import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { Badge, Button, Card } from "./ui";
 
-const NAV: Array<{ id: string; icon: IconName; label: string }> = [
+export type ScreenId =
+  | "dashboard"
+  | "rides"
+  | "plan"
+  | "compare"
+  | "ask"
+  | "connections"
+  | "profile";
+
+const NAV: Array<{ id: ScreenId; icon: IconName; label: string }> = [
   { id: "dashboard", icon: "home", label: "Dashboard" },
   { id: "rides", icon: "bike", label: "Activities" },
   { id: "plan", icon: "calendar", label: "Plan" },
@@ -15,8 +24,8 @@ const NAV: Array<{ id: string; icon: IconName; label: string }> = [
 ];
 
 type ShellProps = {
-  active: string;
-  onNav: (id: string) => void;
+  active: ScreenId;
+  onNav: (id: ScreenId) => void;
   lastSync?: string | null;
   syncStatus?: "ok" | "error" | "stale";
   onSyncNow?: () => void;
