@@ -1,6 +1,6 @@
 "use client";
 
-import type { DashboardResponse, GroundedAnswer } from "@/lib/api";
+import type { Activity, DashboardResponse, GroundedAnswer } from "@/lib/api";
 import { buildDailyTss, buildZoneRows, computeFormSeries, deriveVerdict } from "@/lib/training";
 import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar } from "./charts";
 import { Icon } from "./icons";
@@ -35,6 +35,8 @@ export function Dashboard({
   onAsk,
   asking,
   answer,
+  activities,
+  onExport,
   message,
   onClearMessage
 }: {
@@ -49,10 +51,12 @@ export function Dashboard({
   onAsk: () => void;
   asking: boolean;
   answer: GroundedAnswer | null;
+  activities: Activity[];
+  onExport: () => void;
   message?: string;
   onClearMessage?: () => void;
 }) {
-  const activities = dashboard.analysis.top_workouts;
+  const topActivities = dashboard.analysis.top_workouts;
   const daily = buildDailyTss(activities, rangeDays);
   const form = computeFormSeries(daily);
   const verdict = deriveVerdict(form, dashboard.analysis.weekly);
@@ -98,7 +102,7 @@ export function Dashboard({
                 { value: "1y", label: "1y" }
               ]}
             />
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={onExport} disabled={activities.length === 0}>
               <Icon name="download" size={13} />
               Export
             </Button>
@@ -404,7 +408,7 @@ export function Dashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {activities.slice(0, 6).map((a) => (
+                  {topActivities.slice(0, 6).map((a) => (
                     <tr key={a.id} className="border-t border-border">
                       <td className="mono px-4 py-3 text-muted-foreground">{formatDate(a.started_at)}</td>
                       <td className="px-4 py-3 font-medium">{a.name}</td>
@@ -422,7 +426,7 @@ export function Dashboard({
                       </td>
                     </tr>
                   ))}
-                  {activities.length === 0 ? (
+                  {topActivities.length === 0 ? (
                     <tr className="border-t border-border">
                       <td className="px-4 py-6 text-center text-muted-foreground" colSpan={6}>
                         No activities yet — link a provider and run a sync.

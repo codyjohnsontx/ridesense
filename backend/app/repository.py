@@ -51,6 +51,17 @@ def get_profile(user_id: str) -> AthleteProfile:
     )
 
 
+def delete_user_data(user_id: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM activity_zone_distributions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM canonical_activities WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM provider_activities WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM provider_connections WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sync_runs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM question_answers WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM athlete_profiles WHERE user_id = ?", (user_id,))
+
+
 def save_connection(
     user_id: str,
     provider: str,

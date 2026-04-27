@@ -1,3 +1,5 @@
+export type SyncRun = { id: number; provider: string; status: string; message: string };
+
 export type DashboardResponse = {
   analysis: {
     meta: { total_activities: number; recent_activities: number; weeks: number };
@@ -14,7 +16,7 @@ export type DashboardResponse = {
   };
   insights: Array<{ level: string; title: string; body: string }>;
   connections: Array<{ provider: string; status: string; updated_at: string }>;
-  sync_runs: Array<{ id: number; provider: string; status: string; message: string }>;
+  sync_runs: SyncRun[];
 };
 
 export type Activity = {
@@ -27,6 +29,7 @@ export type Activity = {
   estimated_load: number | null;
   workout_category: string | null;
   source_priority: string;
+  external_url?: string | null;
 };
 
 export type AthleteProfile = {
@@ -43,6 +46,17 @@ export type GroundedAnswer = {
   confidence: "low" | "medium" | "high";
   caveats: string[];
   follow_up_questions: string[];
+};
+
+export type ActivitiesResponse = {
+  activities: Activity[];
+};
+
+export type ConfigStatus = {
+  strava_configured: boolean;
+  trainerroad_linking_configured: boolean;
+  openai_configured: boolean;
+  dev_auth_enabled: boolean;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -75,6 +89,8 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
 export const api = {
   dashboard: (weeks: number, token?: string) =>
     request<DashboardResponse>(`/dashboard?weeks=${weeks}`, undefined, token),
+  activities: (token?: string) => request<ActivitiesResponse>("/activities?limit=1000", undefined, token),
+  configStatus: (token?: string) => request<ConfigStatus>("/config/status", undefined, token),
   profile: (token?: string) => request<AthleteProfile>("/athlete-profile", undefined, token),
   saveProfile: (profile: AthleteProfile, token?: string) =>
     request<AthleteProfile>(
@@ -85,9 +101,9 @@ export const api = {
       },
       token
     ),
-  ask: (question: string, token?: string) =>
+  ask: (question: string, weeks: number, token?: string) =>
     request<GroundedAnswer>(
-      "/questions",
+      `/questions?weeks=${weeks}`,
       {
         method: "POST",
         body: JSON.stringify({ question })
