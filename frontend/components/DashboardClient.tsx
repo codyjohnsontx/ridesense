@@ -54,33 +54,51 @@ export function DashboardClient() {
   const [, startLoad] = useTransition();
   const accessToken = session?.access_token;
   const loadVersion = useRef(0);
+  const staticLoadVersion = useRef(0);
 
-  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
+  const loadDashboard = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
     const token = overrideToken ?? accessToken;
     const thisVersion = ++loadVersion.current;
     startLoad(async () => {
       try {
-        const [dashboardData, profileData, activitiesData] = await Promise.all([
-          api.dashboard(weeks, token),
-          api.profile(token),
-          api.activities(token)
-        ]);
+        const dashboardData = await api.dashboard(weeks, token);
+        if (loadVersion.current !== thisVersion) return;
+        setDashboard(dashboardData);
+      } catch (err) {
+        if (loadVersion.current !== thisVersion) return;
+        setMessage(err instanceof Error ? err.message : "Failed to load dashboard.");
+      }
+    });
+  };
+
+  const loadStaticData = (overrideToken?: string) => {
+    const token = overrideToken ?? accessToken;
+    const thisVersion = ++staticLoadVersion.current;
+    startLoad(async () => {
+      try {
+        const [profileData, activitiesData] = await Promise.all([api.profile(token), api.activities(token)]);
         let configData: ConfigStatus | null = null;
         try {
           configData = await api.configStatus(token);
         } catch {
           configData = null;
         }
-        if (loadVersion.current !== thisVersion) return;
-        setDashboard(dashboardData);
+        if (staticLoadVersion.current !== thisVersion) return;
         setProfile(profileData);
         setActivities(activitiesData.activities);
         setConfigStatus(configData);
       } catch (err) {
-        if (loadVersion.current !== thisVersion) return;
-        setMessage(err instanceof Error ? err.message : "Failed to load dashboard.");
+        if (staticLoadVersion.current !== thisVersion) return;
+        setMessage(err instanceof Error ? err.message : "Failed to load athlete data.");
       }
     });
+  };
+
+  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range], includeStatic = true) => {
+    loadDashboard(overrideToken, weeks);
+    if (includeStatic) {
+      loadStaticData(overrideToken);
+    }
   };
 
   useEffect(() => {
@@ -129,7 +147,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!dashboard) return;
-    load();
+    loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
@@ -167,7 +185,7 @@ export function DashboardClient() {
     try {
       const run = await api.startSync("all", accessToken);
       setMessage(run.message || `Sync ${run.status}`);
-      load();
+      load(accessToken, WEEKS_FOR_RANGE[range], true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Sync failed.");
     } finally {
@@ -190,6 +208,10 @@ export function DashboardClient() {
 
   function exportActivities() {
     const headers = ["Date", "Workout", "Sport", "Source", "Category", "Duration seconds", "TSS", "Estimated load"];
+    const safeCsvCell = (cell: string) => {
+      const safeValue = /^[=+\-@]/.test(cell) ? `'${cell}` : cell;
+      return `"${safeValue.replaceAll('"', '""')}"`;
+    };
     const rows = activities.map((a) => [
       a.started_at,
       a.name,
@@ -201,7 +223,7 @@ export function DashboardClient() {
       a.estimated_load == null ? "" : String(a.estimated_load)
     ]);
     const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(","))
+      .map((row) => row.map(safeCsvCell).join(","))
       .join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

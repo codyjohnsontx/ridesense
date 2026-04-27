@@ -42,7 +42,7 @@ def wait_for_url(url: str, timeout: float = 45) -> None:
     while time.monotonic() < deadline:
         try:
             with urlopen(url, timeout=2) as response:
-                if response.status < 500:
+                if 200 <= response.status < 400:
                     return
         except (TimeoutError, URLError) as exc:
             last_error = exc

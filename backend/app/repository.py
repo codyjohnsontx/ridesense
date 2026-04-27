@@ -221,7 +221,7 @@ def list_canonical_activities(user_id: str, limit: int = 500, offset: int = 0) -
             """
             SELECT * FROM canonical_activities
             WHERE user_id = ?
-            ORDER BY started_at DESC
+            ORDER BY started_at DESC, id DESC
             LIMIT ? OFFSET ?
             """,
             (user_id, limit, offset),
