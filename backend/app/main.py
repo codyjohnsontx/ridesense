@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from urllib.parse import urlencode
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -17,6 +20,8 @@ from app.services.insights import generate_insights
 from app.services.merge import rebuild_canonical_activities
 from app.services.sync import sync_provider
 
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Training Insights API", version="0.1.0")
 app.add_middleware(
@@ -62,23 +67,68 @@ def strava_link_start(user_id: UserId) -> dict[str, str]:
 
 
 @app.get("/strava/oauth/callback")
-def strava_oauth_callback(code: str, state: str) -> RedirectResponse:
-    # The sealed state contains the user id and is tamper-evident for local MVP.
+def strava_oauth_callback(
+    state: str | None = None,
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    if error:
+        return _frontend_redirect("strava", "error", f"Strava authorization failed: {error}")
+
+    if not code:
+        return _frontend_redirect("strava", "error", "Missing Strava authorization code.")
+
     from app.security import open_json
 
-    data = open_json(state)
-    user_id = data["user_id"]
-    token_payload = strava.exchange_code(code)
+    if not state:
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+
+    try:
+        data = open_json(state)
+        user_id = data.get("user_id")
+        if data.get("provider") != "strava" or not user_id:
+            return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+    except Exception:
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+
+    try:
+        token_payload = strava.exchange_code(code)
+    except Exception:
+        return _frontend_redirect("strava", "error", "Unable to exchange Strava authorization code.")
+
+    if not isinstance(token_payload, dict):
+        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+
+    if not strava.has_required_scopes(token_payload):
+        return _frontend_redirect(
+            "strava",
+            "error",
+            "RideSense needs Strava activity read access to import cycling history.",
+        )
+
+    if not token_payload.get("access_token") or not token_payload.get("refresh_token"):
+        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+
     athlete = token_payload.get("athlete") or {}
-    repository.save_connection(
-        user_id=user_id,
-        provider="strava",
-        encrypted_secret=seal_json(token_payload),
-        external_athlete_id=str(athlete.get("id") or ""),
-        scopes="read,activity:read_all,profile:read_all",
-        expires_at=token_payload.get("expires_at"),
-    )
-    return RedirectResponse(f"{settings.frontend_origin}/integrations?linked=strava")
+    scopes = ",".join(sorted(strava.accepted_scopes(token_payload)))
+    try:
+        repository.save_connection(
+            user_id=user_id,
+            provider="strava",
+            encrypted_secret=seal_json(token_payload),
+            external_athlete_id=str(athlete.get("id") or ""),
+            scopes=scopes,
+            expires_at=token_payload.get("expires_at"),
+        )
+    except Exception:
+        logger.exception("Failed to persist Strava connection")
+        return _frontend_redirect("strava", "error", "Unable to save Strava connection.")
+    return _frontend_redirect("strava", "connected", "Strava connected.")
+
+
+def _frontend_redirect(provider: str, status: str, message: str) -> RedirectResponse:
+    query = urlencode({"provider": provider, "status": status, "message": message})
+    return RedirectResponse(f"{settings.frontend_origin}/?{query}")
 
 
 @app.post("/trainerroad/link/start")

@@ -42,6 +42,15 @@ export function DashboardClient() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get("provider");
+    const status = params.get("status");
+    const callbackMessage = params.get("message");
+    if (provider && status && callbackMessage) {
+      setMessage(callbackMessage);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
     if (!supabaseConfigured || !supabase) {
       load();
       return;
