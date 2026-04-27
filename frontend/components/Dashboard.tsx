@@ -26,6 +26,7 @@ function formatLastSync(iso?: string | null) {
 export function Dashboard({
   dashboard,
   range,
+  rangeDays,
   onRangeChange,
   onSync,
   syncing,
@@ -39,6 +40,7 @@ export function Dashboard({
 }: {
   dashboard: DashboardResponse;
   range: "4w" | "12w" | "6mo" | "1y";
+  rangeDays: number;
   onRangeChange: (r: "4w" | "12w" | "6mo" | "1y") => void;
   onSync: () => void;
   syncing: boolean;
@@ -51,7 +53,7 @@ export function Dashboard({
   onClearMessage?: () => void;
 }) {
   const activities = dashboard.analysis.top_workouts;
-  const daily = buildDailyTss(activities, 84);
+  const daily = buildDailyTss(activities, rangeDays);
   const form = computeFormSeries(daily);
   const verdict = deriveVerdict(form, dashboard.analysis.weekly);
   const weekly = dashboard.analysis.weekly;
@@ -220,7 +222,9 @@ export function Dashboard({
                 <Delta value={weekDeltaPct} />
               </div>
               <span className="text-[11.5px] text-muted-foreground">
-                vs prior {priorCount}-wk avg · {Math.round(priorAvg)} TSS
+                {priorCount > 0
+                  ? `vs prior ${priorCount}-wk avg · ${Math.round(priorAvg)} TSS`
+                  : `baseline · ${Math.round(priorAvg)} TSS`}
               </span>
               <WeeklyLoadChart weekly={weekly} h={110} />
             </CardContent>

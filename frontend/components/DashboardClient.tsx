@@ -17,6 +17,15 @@ const emptyProfile: AthleteProfile = {
   training_days: ""
 };
 
+type Range = "4w" | "12w" | "6mo" | "1y";
+
+const WEEKS_FOR_RANGE: Record<Range, number> = {
+  "4w": 4,
+  "12w": 12,
+  "6mo": 26,
+  "1y": 52
+};
+
 function pickLastSync(d: DashboardResponse | null) {
   if (!d) return null;
   const stamps = d.connections.map((c) => c.updated_at).filter(Boolean);
@@ -30,7 +39,7 @@ export function DashboardClient() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [active, setActive] = useState<ScreenId>("dashboard");
-  const [range, setRange] = useState<"4w" | "12w" | "6mo" | "1y">("12w");
+  const [range, setRange] = useState<Range>("12w");
   const [question, setQuestion] = useState("Am I trending toward better endurance fitness?");
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [asking, setAsking] = useState(false);
@@ -41,12 +50,13 @@ export function DashboardClient() {
   const [, startLoad] = useTransition();
   const accessToken = session?.access_token;
 
-  const load = () => {
+  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
+    const token = overrideToken ?? accessToken;
     startLoad(async () => {
       try {
         const [dashboardData, profileData] = await Promise.all([
-          api.dashboard(accessToken),
-          api.profile(accessToken)
+          api.dashboard(weeks, token),
+          api.profile(token)
         ]);
         setDashboard(dashboardData);
         setProfile(profileData);
@@ -75,7 +85,7 @@ export function DashboardClient() {
       setSession(data.session);
       setAuthReady(true);
       if (data.session) {
-        load();
+        load(data.session.access_token);
       }
     });
 
@@ -95,10 +105,16 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (supabaseConfigured && session) {
-      load();
+      load(session.access_token);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!dashboard) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range]);
 
   async function submitAuth(mode: "sign-in" | "sign-up", email: string, password: string) {
     if (!supabase) return;
@@ -188,6 +204,7 @@ export function DashboardClient() {
   const lastSync = useMemo(() => formatLastSync(pickLastSync(dashboard)), [dashboard]);
   const syncStatus: "ok" | "stale" | "error" = useMemo(() => {
     if (!dashboard) return "ok";
+    if (dashboard.connections.length === 0) return "stale";
     if (dashboard.connections.some((c) => c.status === "error")) return "error";
     if (dashboard.connections.some((c) => c.status === "stale")) return "stale";
     return "ok";
@@ -226,6 +243,7 @@ export function DashboardClient() {
         <Dashboard
           dashboard={dashboard}
           range={range}
+          rangeDays={WEEKS_FOR_RANGE[range] * 7}
           onRangeChange={setRange}
           onSync={syncAll}
           syncing={syncing}

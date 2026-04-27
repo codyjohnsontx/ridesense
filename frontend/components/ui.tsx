@@ -1,4 +1,13 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+  useId,
+  useRef
+} from "react";
 import { Icon } from "./icons";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -135,26 +144,63 @@ export function Tabs({
   value,
   onChange,
   options,
-  className
+  className,
+  ariaLabel
 }: {
   value: string;
   onChange?: (next: string) => void;
   options: TabOption[];
   className?: string;
+  ariaLabel?: string;
 }) {
+  const tabIdPrefix = useId();
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const values = options.map((opt) => (typeof opt === "string" ? opt : opt.value));
+
+  const select = (idx: number) => {
+    const v = values[idx];
+    if (v === undefined) return;
+    onChange?.(v);
+    buttonRefs.current[idx]?.focus();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, idx: number) => {
+    const len = values.length;
+    let next = idx;
+    if (event.key === "ArrowRight") next = (idx + 1) % len;
+    else if (event.key === "ArrowLeft") next = (idx - 1 + len) % len;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = len - 1;
+    else return;
+    event.preventDefault();
+    select(next);
+  };
+
   return (
-    <div className={cn("inline-flex gap-0.5 rounded-md bg-muted p-[3px]", className)}>
-      {options.map((opt) => {
-        const v = typeof opt === "string" ? opt : opt.value;
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn("inline-flex gap-0.5 rounded-md bg-muted p-[3px]", className)}
+    >
+      {options.map((opt, idx) => {
+        const v = values[idx];
         const l = typeof opt === "string" ? opt : opt.label;
         const active = v === value;
         return (
           <button
             key={v}
+            ref={(el) => {
+              buttonRefs.current[idx] = el;
+            }}
             type="button"
+            role="tab"
+            id={`${tabIdPrefix}-tab-${v}`}
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange?.(v)}
+            onKeyDown={(event) => handleKeyDown(event, idx)}
             className={cn(
-              "rounded-sm border-0 px-3 py-[5px] text-[13px] font-medium transition-colors cursor-pointer",
+              "rounded-sm border-0 px-3 py-[5px] text-[13px] font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
                 ? "bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
                 : "bg-transparent text-muted-foreground hover:text-foreground"

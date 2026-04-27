@@ -73,7 +73,8 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
 }
 
 export const api = {
-  dashboard: (token?: string) => request<DashboardResponse>("/dashboard?weeks=12", undefined, token),
+  dashboard: (weeks: number, token?: string) =>
+    request<DashboardResponse>(`/dashboard?weeks=${weeks}`, undefined, token),
   profile: (token?: string) => request<AthleteProfile>("/athlete-profile", undefined, token),
   saveProfile: (profile: AthleteProfile, token?: string) =>
     request<AthleteProfile>(
