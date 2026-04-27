@@ -11,6 +11,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -26,8 +27,8 @@ class ManagedProcess:
     proc: subprocess.Popen[str]
     stdout_path: Path
     stderr_path: Path
-    stdout_file: object
-    stderr_file: object
+    stdout_file: IO[str]
+    stderr_file: IO[str]
 
 
 def free_port() -> int:
@@ -51,8 +52,8 @@ def wait_for_url(url: str, timeout: float = 45) -> None:
 
 
 def start_process(cmd: list[str], env: dict[str, str], cwd: Path) -> ManagedProcess:
-    stdout_handle = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
-    stderr_handle = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
+    stdout_handle: IO[str] = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
+    stderr_handle: IO[str] = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", delete=False)
     proc = subprocess.Popen(
         cmd,
         cwd=cwd,
