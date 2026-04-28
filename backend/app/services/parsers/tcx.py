@@ -5,6 +5,7 @@ from typing import Any
 from xml.etree.ElementTree import Element, ParseError
 
 import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 
 def _parse_iso(value: str) -> datetime:
@@ -19,7 +20,7 @@ def _findtext(element: Element, path: str, ns: dict[str, str]) -> str | None:
 def parse_tcx(content: bytes) -> dict[str, Any]:
     try:
         root = ET.fromstring(content)
-    except ParseError as exc:
+    except (ParseError, DefusedXmlException) as exc:
         raise ValueError(f"Invalid TCX XML: {exc}") from exc
 
     ns_uri = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""

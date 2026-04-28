@@ -6,6 +6,7 @@ from typing import Any
 from xml.etree.ElementTree import ParseError
 
 import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 
 GPX_NS = {
@@ -30,26 +31,34 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
 def parse_gpx(content: bytes) -> dict[str, Any]:
     try:
         root = ET.fromstring(content)
-    except ParseError as exc:
+    except (ParseError, DefusedXmlException) as exc:
         raise ValueError(f"Invalid GPX XML: {exc}") from exc
 
     ns_uri = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""
     ns = {"g": ns_uri} if ns_uri else {}
 
-    track_points = root.findall(".//g:trk/g:trkseg/g:trkpt", ns) if ns else root.findall(".//trkpt")
-    if not track_points:
-        raise ValueError("GPX file has no track points")
+    segments = root.findall(".//g:trk/g:trkseg", ns) if ns else root.findall(".//trkseg")
+    if not segments:
+        raise ValueError("GPX file has no track segments")
 
     times: list[datetime] = []
-    coords: list[tuple[float, float]] = []
-    for pt in track_points:
-        time_el = pt.find("g:time", ns) if ns else pt.find("time")
-        if time_el is not None and time_el.text:
-            times.append(_parse_iso(time_el.text))
-        try:
-            coords.append((float(pt.attrib["lat"]), float(pt.attrib["lon"])))
-        except (KeyError, ValueError):
-            continue
+    distance = 0.0
+    for seg in segments:
+        seg_points = seg.findall("g:trkpt", ns) if ns else seg.findall("trkpt")
+        seg_coords: list[tuple[float, float]] = []
+        for pt in seg_points:
+            time_el = pt.find("g:time", ns) if ns else pt.find("time")
+            if time_el is not None and time_el.text:
+                times.append(_parse_iso(time_el.text))
+            try:
+                seg_coords.append((float(pt.attrib["lat"]), float(pt.attrib["lon"])))
+            except (KeyError, ValueError):
+                continue
+        # Sum haversine only within this segment so a paused-and-resumed
+        # ride doesn't get a phantom hop between the last point of one
+        # trkseg and the first point of the next.
+        for (lat1, lon1), (lat2, lon2) in zip(seg_coords, seg_coords[1:]):
+            distance += _haversine_meters(lat1, lon1, lat2, lon2)
 
     if not times:
         raise ValueError("GPX file has no timestamped track points")
@@ -58,10 +67,6 @@ def parse_gpx(content: bytes) -> dict[str, Any]:
     duration = int((times[-1] - started_at).total_seconds())
     if duration <= 0:
         raise ValueError("GPX file duration is zero or negative")
-
-    distance = 0.0
-    for (lat1, lon1), (lat2, lon2) in zip(coords, coords[1:]):
-        distance += _haversine_meters(lat1, lon1, lat2, lon2)
 
     name_el = root.find(".//g:trk/g:name", ns) if ns else root.find(".//trk/name")
     name = name_el.text.strip() if name_el is not None and name_el.text else None

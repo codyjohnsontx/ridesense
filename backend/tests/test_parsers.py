@@ -33,8 +33,53 @@ def test_gpx_parser_rejects_invalid_xml() -> None:
 
 def test_gpx_parser_rejects_no_trackpoints() -> None:
     empty = b'<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><name>x</name></trk></gpx>'
-    with pytest.raises(ValueError, match="no track points"):
+    with pytest.raises(ValueError, match="no track segments"):
         parse_gpx(empty)
+
+
+def test_gpx_distance_does_not_bridge_segment_boundaries() -> None:
+    """A paused-and-resumed ride exports as multiple <trkseg>. Distance
+    must sum within each segment and never zip across the gap."""
+    multi_segment = b"""<?xml version="1.0"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <trkseg>
+      <trkpt lat="30.0000" lon="-97.0000"><time>2026-04-25T12:00:00Z</time></trkpt>
+      <trkpt lat="30.0010" lon="-97.0000"><time>2026-04-25T12:01:00Z</time></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="40.0000" lon="-100.0000"><time>2026-04-25T13:00:00Z</time></trkpt>
+      <trkpt lat="40.0010" lon="-100.0000"><time>2026-04-25T13:01:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+    parsed = parse_gpx(multi_segment)
+    # Each segment is ~111m; total should be ~222m, not the ~1300km
+    # that bridging the two locations would produce.
+    assert parsed["distance_meters"] is not None
+    assert parsed["distance_meters"] < 500
+
+
+def test_gpx_parser_rejects_dtd() -> None:
+    """defusedxml must reject DTDs/entity declarations and we must surface
+    that as ValueError, not a 500."""
+    malicious = (
+        b'<?xml version="1.0"?>\n'
+        b'<!DOCTYPE gpx [<!ENTITY a "x">]>\n'
+        b'<gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg/></trk></gpx>'
+    )
+    with pytest.raises(ValueError, match="Invalid GPX"):
+        parse_gpx(malicious)
+
+
+def test_tcx_parser_rejects_dtd() -> None:
+    malicious = (
+        b'<?xml version="1.0"?>\n'
+        b'<!DOCTYPE TrainingCenterDatabase [<!ENTITY a "x">]>\n'
+        b'<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"/>'
+    )
+    with pytest.raises(ValueError, match="Invalid TCX"):
+        parse_tcx(malicious)
 
 
 def test_tcx_parser_sums_laps() -> None:
