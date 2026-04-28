@@ -95,10 +95,17 @@ To enable real auth locally, create a Supabase project and set the following:
   `sync_trainerroad_activities` returns an empty list. The intended
   production approach is browser session-link via Playwright that captures
   and stores cookies — never the TrainerRoad password.
+- **File upload** (`POST /uploads/activity`) accepts GPX, TCX, and FIT
+  exports up to 10 MB. The parser dispatches by extension, derives a
+  content-hashed `provider_activity_id` so re-uploads are idempotent, and
+  feeds the result through the same dedup/merge pipeline as provider sync.
+  This is the recommended path for real data while the TrainerRoad
+  scraper remains scaffolded.
 - **Deduplication** is implemented in `backend/app/services/merge.py`:
   candidates from each provider are scored by start-time delta, duration
   delta, and name similarity, and merged into one canonical activity at a
   confidence threshold of 0.72 so training load is not double-counted.
+  Source priority on conflict is TrainerRoad > Strava > upload.
 
 ## AI Boundary
 

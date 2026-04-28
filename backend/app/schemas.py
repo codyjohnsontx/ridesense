@@ -46,7 +46,7 @@ class GroundedAnswer(BaseModel):
 
 
 class ActivityIn(BaseModel):
-    provider: Literal["strava", "trainerroad"]
+    provider: Literal["strava", "trainerroad", "upload"]
     provider_activity_id: str
     name: str
     sport_type: str

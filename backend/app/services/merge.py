@@ -6,6 +6,13 @@ from difflib import SequenceMatcher
 from app.db import connect
 
 
+_PROVIDER_PRIORITY = {"trainerroad": 3, "strava": 2, "upload": 1}
+
+
+def _higher_priority(a: str, b: str) -> str:
+    return a if _PROVIDER_PRIORITY.get(a, 0) >= _PROVIDER_PRIORITY.get(b, 0) else b
+
+
 def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -92,7 +99,7 @@ def rebuild_canonical_activities(user_id: str) -> None:
             else:
                 existing = canonicals[match_index]
                 canonical_id = existing["id"]
-                source_priority = "trainerroad" if row["provider"] == "trainerroad" else existing["provider"]
+                source_priority = _higher_priority(row["provider"], existing["provider"])
                 tss = row["tss"] if row["tss"] is not None else existing["tss"]
                 estimated_load = existing["estimated_load"] if existing["estimated_load"] is not None else row["estimated_load"]
                 workout_category = row["workout_category"] or existing["workout_category"]
