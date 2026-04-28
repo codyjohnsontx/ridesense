@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+from typing import Any, Callable
 
 from app.schemas import ActivityIn
 
@@ -10,10 +12,16 @@ from .gpx import parse_gpx
 from .tcx import parse_tcx
 
 
-SUPPORTED_EXTENSIONS = {".gpx", ".tcx", ".fit"}
+EXTENSION_TO_PARSER: dict[str, Callable[[bytes], dict[str, Any]]] = {
+    ".gpx": parse_gpx,
+    ".tcx": parse_tcx,
+    ".fit": parse_fit,
+}
+SUPPORTED_EXTENSIONS = frozenset(EXTENSION_TO_PARSER)
 
 
 __all__ = [
+    "EXTENSION_TO_PARSER",
     "InvalidActivityFileError",
     "SUPPORTED_EXTENSIONS",
     "UnsupportedFormatError",
@@ -28,20 +36,16 @@ def parse_activity_file(filename: str, content: bytes) -> ActivityIn:
     so re-uploading the same file is idempotent — repository.upsert will
     update the existing row rather than create a duplicate.
     """
-    lower = filename.lower()
-    digest = hashlib.sha256(content).hexdigest()
-
-    if lower.endswith(".gpx"):
-        parsed = parse_gpx(content)
-    elif lower.endswith(".tcx"):
-        parsed = parse_tcx(content)
-    elif lower.endswith(".fit"):
-        parsed = parse_fit(content)
-    else:
+    _, ext = os.path.splitext(filename.lower())
+    parser = EXTENSION_TO_PARSER.get(ext)
+    if parser is None:
         raise UnsupportedFormatError(
             f"Unsupported activity file format: {filename}. "
-            f"Supported: {sorted(SUPPORTED_EXTENSIONS)}"
+            f"Supported: {sorted(EXTENSION_TO_PARSER)}"
         )
+
+    parsed = parser(content)
+    digest = hashlib.sha256(content).hexdigest()
 
     return ActivityIn(
         provider="upload",

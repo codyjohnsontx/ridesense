@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.services.parsers import (
+    EXTENSION_TO_PARSER,
     InvalidActivityFileError,
     SUPPORTED_EXTENSIONS,
     UnsupportedFormatError,
@@ -157,6 +158,12 @@ def test_dispatcher_rejects_unknown_extension() -> None:
 
 def test_supported_extensions_set() -> None:
     assert SUPPORTED_EXTENSIONS == {".gpx", ".tcx", ".fit"}
+
+
+def test_supported_extensions_derived_from_dispatch_table() -> None:
+    """Lock in the single source of truth: the supported set is the
+    extension-to-parser map's keys, so the two cannot drift apart."""
+    assert set(SUPPORTED_EXTENSIONS) == set(EXTENSION_TO_PARSER)
 
 
 def test_fit_parser_routes_to_fitparse(monkeypatch: pytest.MonkeyPatch) -> None:
