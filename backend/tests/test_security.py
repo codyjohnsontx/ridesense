@@ -52,25 +52,20 @@ def test_open_rejects_token_from_different_key(monkeypatch: pytest.MonkeyPatch) 
         open_json(token)
 
 
-def test_fernet_rejects_default_secret_outside_development(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("app_env", "app_secret_key"),
+    [
+        ("production", "replace-me"),
+        ("staging", "abc"),
+    ],
+)
+def test_fernet_rejects_weak_secret_outside_development(
+    monkeypatch: pytest.MonkeyPatch, app_env: str, app_secret_key: str
 ) -> None:
     monkeypatch.setattr(
         security,
         "settings",
-        replace(security.settings, app_env="production", app_secret_key="replace-me"),
-    )
-    with pytest.raises(RuntimeError, match="APP_SECRET_KEY"):
-        security._fernet()
-
-
-def test_fernet_rejects_short_secret_outside_development(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        security,
-        "settings",
-        replace(security.settings, app_env="staging", app_secret_key="abc"),
+        replace(security.settings, app_env=app_env, app_secret_key=app_secret_key),
     )
     with pytest.raises(RuntimeError, match="APP_SECRET_KEY"):
         security._fernet()
