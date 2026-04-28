@@ -10,8 +10,20 @@ from cryptography.fernet import Fernet, InvalidToken
 from app.config import settings
 
 
+_WEAK_SECRETS = {"", "replace-me", "changeme", "secret", "password"}
+_MIN_SECRET_LENGTH = 16
+
+
 def _fernet() -> Fernet:
-    digest = hashlib.sha256(settings.app_secret_key.encode("utf-8")).digest()
+    secret = settings.app_secret_key
+    if settings.app_env != "development":
+        if secret in _WEAK_SECRETS or len(secret) < _MIN_SECRET_LENGTH:
+            raise RuntimeError(
+                "APP_SECRET_KEY is missing, default, or too short outside "
+                "development. Set a strong (>= 16 char) random value sourced "
+                "from your secret store before starting the service."
+            )
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 
 

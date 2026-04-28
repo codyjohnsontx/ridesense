@@ -44,7 +44,49 @@ def test_open_rejects_token_from_different_key(monkeypatch: pytest.MonkeyPatch) 
         open_json(token)
 
 
-def test_open_rejects_non_object_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fernet_rejects_default_secret_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        security,
+        "settings",
+        replace(security.settings, app_env="production", app_secret_key="replace-me"),
+    )
+    with pytest.raises(RuntimeError, match="APP_SECRET_KEY"):
+        security._fernet()
+
+
+def test_fernet_rejects_short_secret_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        security,
+        "settings",
+        replace(security.settings, app_env="staging", app_secret_key="abc"),
+    )
+    with pytest.raises(RuntimeError, match="APP_SECRET_KEY"):
+        security._fernet()
+
+
+def test_fernet_allows_default_secret_in_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local dev must keep working with the .env.example default."""
+    from dataclasses import replace
+
+    monkeypatch.setattr(
+        security,
+        "settings",
+        replace(security.settings, app_env="development", app_secret_key="replace-me"),
+    )
+    security._fernet()  # must not raise
+
+
+def test_open_rejects_non_object_payload() -> None:
     """Tokens must wrap a JSON object, not a bare value."""
     import json
 
