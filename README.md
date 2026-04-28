@@ -85,10 +85,10 @@ To enable real auth locally, create a Supabase project and set the following:
 ## Provider Strategy
 
 - **Strava** uses official OAuth (authorize → code exchange → refresh).
-  Access and refresh tokens are wrapped by `backend/app/security.seal_json`,
-  which produces an HMAC-signed, base64-encoded payload — tamper-evident, not
-  encrypted. The docstring on that helper calls out that it must be replaced
-  with KMS or Supabase Vault encryption before production token storage.
+  Access and refresh tokens are encrypted by `backend/app/security.seal_json`
+  using Fernet (AES-128-CBC + HMAC-SHA256), with the key derived from
+  `APP_SECRET_KEY`. In production, `APP_SECRET_KEY` should come from a managed
+  secret store (KMS, Supabase Vault, etc.) rather than `.env`.
 - **TrainerRoad** integration is currently **scaffolded only**.
   `backend/app/providers/trainerroad.py` exposes the API surface but
   `link_session_placeholder` returns `not_configured` and
