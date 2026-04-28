@@ -168,14 +168,13 @@ def test_supported_extensions_derived_from_dispatch_table() -> None:
 
 def test_fit_parser_routes_to_fitparse(monkeypatch: pytest.MonkeyPatch) -> None:
     """We don't ship a binary .fit fixture (it would require manual byte
-    construction with CRCs); instead verify the dispatcher reaches parse_fit
-    and surfaces fitparse errors as ValueError."""
-    from app.services.parsers import fit as fit_module
+    construction with CRCs); instead verify the dispatcher routes .fit
+    files through EXTENSION_TO_PARSER to the registered FIT parser."""
+    sentinel = "synthetic-fit-parser-was-called"
 
     def fake_parser(content: bytes):  # noqa: ARG001
-        raise ValueError("Invalid FIT file: synthetic")
+        raise ValueError(sentinel)
 
-    monkeypatch.setattr(fit_module, "parse_fit", fake_parser)
-    monkeypatch.setattr("app.services.parsers.parse_fit", fake_parser)
-    with pytest.raises(ValueError, match="Invalid FIT"):
+    monkeypatch.setitem(EXTENSION_TO_PARSER, ".fit", fake_parser)
+    with pytest.raises(ValueError, match=sentinel):
         parse_activity_file("ride.fit", b"\x00\x00")
