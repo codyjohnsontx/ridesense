@@ -86,6 +86,30 @@ def test_sync_strava_marks_connection_error_when_refresh_fails(
     save_call.assert_not_called()
 
 
+def test_sync_strava_marks_connection_error_when_refresh_payload_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 200 response from Strava with a missing refresh_token must not be
+    persisted — the next sync would explode on secret["refresh_token"]."""
+    monkeypatch.setattr(sync_module.repository, "get_connection", lambda *_a, **_k: _connection())
+    monkeypatch.setattr(sync_module, "open_json", lambda _t: {"access_token": "old", "refresh_token": "r", "expires_at": 0})
+    monkeypatch.setattr(
+        sync_module.strava,
+        "refresh_access_token",
+        lambda _r: {"access_token": "new", "expires_at": 9_999_999_999},  # no refresh_token
+    )
+    set_status = Mock()
+    monkeypatch.setattr(sync_module.repository, "set_connection_status", set_status)
+    save_call = Mock()
+    monkeypatch.setattr(sync_module.repository, "save_connection", save_call)
+
+    with pytest.raises(StravaTokenRefreshError, match="incomplete"):
+        sync_strava("demo-user")
+
+    set_status.assert_called_once_with("demo-user", "strava", "error")
+    save_call.assert_not_called()
+
+
 def test_sync_strava_paginates_and_filters_non_cycling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -14,11 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class StravaTokenRefreshError(RuntimeError):
-    """Raised when refresh_access_token fails (revoked, expired, network).
+    """Raised when refresh_access_token fails (revoked, expired, network)
+    or returns a payload missing required fields.
 
     The connection is marked status='error' before this is raised so the
     UI can surface the relink prompt without the caller doing extra work.
     """
+
+
+_REQUIRED_REFRESH_FIELDS = ("access_token", "refresh_token", "expires_at")
+
+
+def _refresh_payload_is_valid(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return all(payload.get(field) for field in _REQUIRED_REFRESH_FIELDS)
 
 
 def sync_strava(user_id: str) -> int:
@@ -29,13 +39,24 @@ def sync_strava(user_id: str) -> int:
     secret = open_json(connection["encrypted_secret"])
     if int(secret.get("expires_at") or 0) <= int(time.time()) + 60:
         try:
-            secret = strava.refresh_access_token(secret["refresh_token"])
+            refreshed = strava.refresh_access_token(secret["refresh_token"])
         except Exception as exc:
             logger.warning("Strava token refresh failed for user %s: %s", user_id, exc)
             repository.set_connection_status(user_id, "strava", "error")
             raise StravaTokenRefreshError(
                 "Strava refresh failed; the user must relink the connection."
             ) from exc
+        if not _refresh_payload_is_valid(refreshed):
+            logger.warning(
+                "Strava refresh response for user %s missing required fields %s",
+                user_id,
+                _REQUIRED_REFRESH_FIELDS,
+            )
+            repository.set_connection_status(user_id, "strava", "error")
+            raise StravaTokenRefreshError(
+                "Strava refresh response was incomplete; the user must relink."
+            )
+        secret = refreshed
         repository.save_connection(
             user_id=user_id,
             provider="strava",
