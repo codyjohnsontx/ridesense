@@ -148,5 +148,25 @@ export const api = {
         method: "POST"
       },
       token
-    )
+    ),
+  uploadActivity: async (file: File, token?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(`${API_URL}/uploads/activity`, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: formData,
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    return response.json() as Promise<{
+      status: string;
+      name: string;
+      started_at: string;
+      duration_seconds: number;
+      distance_meters: number | null;
+    }>;
+  }
 };

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,9 @@ from app import db, repository
 from app.main import app
 from app.schemas import ActivityIn, AthleteProfile
 from app.services.merge import rebuild_canonical_activities
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _client(tmp_path, monkeypatch):
@@ -123,6 +127,84 @@ def test_sync_run_completed_status_with_mocked_provider(tmp_path, monkeypatch):
     body = response.json()
     assert body["status"] == "completed"
     assert body["message"] == "Imported 2 Strava and 3 TrainerRoad activities."
+
+
+def test_upload_activity_imports_and_dedupes(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    gpx_bytes = (FIXTURES / "sample.gpx").read_bytes()
+
+    first = client.post(
+        "/uploads/activity",
+        files={"file": ("ride.gpx", gpx_bytes, "application/gpx+xml")},
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "imported"
+    assert first.json()["duration_seconds"] == 90 * 60
+
+    # Same file again — provider_activity_id is content-hashed, so upsert
+    # leaves a single canonical row instead of duplicating.
+    second = client.post(
+        "/uploads/activity",
+        files={"file": ("ride.gpx", gpx_bytes, "application/gpx+xml")},
+    )
+    assert second.status_code == 200
+
+    activities = client.get("/activities").json()["activities"]
+    assert len(activities) == 1
+    assert activities[0]["source_priority"] == "upload"
+
+
+def test_upload_activity_rejects_unsupported_extension(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/uploads/activity",
+        files={"file": ("ride.csv", b"date,watts\n", "text/csv")},
+    )
+    assert response.status_code == 400
+    assert "unsupported file type" in response.json()["detail"]
+
+
+def test_upload_activity_rejects_oversized_file(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    huge = b"x" * (10 * 1024 * 1024 + 1024)
+    response = client.post(
+        "/uploads/activity",
+        files={"file": ("ride.gpx", huge, "application/gpx+xml")},
+    )
+    assert response.status_code == 413
+
+
+def test_upload_activity_rejects_unparseable_content(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/uploads/activity",
+        files={"file": ("ride.gpx", b"<not-gpx", "application/gpx+xml")},
+    )
+    assert response.status_code == 422
+
+
+def test_upload_then_strava_match_promotes_to_strava_priority(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    gpx_bytes = (FIXTURES / "sample.gpx").read_bytes()
+    client.post("/uploads/activity", files={"file": ("ride.gpx", gpx_bytes, "application/gpx+xml")})
+
+    repository.upsert_provider_activity(
+        "demo-user",
+        ActivityIn(
+            provider="strava",
+            provider_activity_id="strava-overlap",
+            name="Saturday endurance",
+            sport_type="Ride",
+            started_at="2026-04-25T12:01:00+00:00",
+            duration_seconds=90 * 60,
+            estimated_load=72,
+        ),
+    )
+    rebuild_canonical_activities("demo-user")
+
+    activities = client.get("/activities").json()["activities"]
+    assert len(activities) == 1
+    assert activities[0]["source_priority"] == "strava"
 
 
 def test_config_status_returns_boolean_flags(tmp_path, monkeypatch):

@@ -49,6 +49,7 @@ export function DashboardClient() {
   const [asking, setAsking] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [, startLoad] = useTransition();
@@ -190,6 +191,20 @@ export function DashboardClient() {
       setMessage(err instanceof Error ? err.message : "Sync failed.");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function uploadFile(file: File) {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      const result = await api.uploadActivity(file, accessToken);
+      setMessage(`Imported ${result.name} (${Math.round(result.duration_seconds / 60)} min).`);
+      load(accessToken, WEEKS_FOR_RANGE[range], true);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -338,7 +353,9 @@ export function DashboardClient() {
           onLinkStrava={linkStrava}
           onLinkTrainerRoad={linkTrainerRoad}
           onSync={syncAll}
+          onUploadFile={uploadFile}
           syncing={syncing}
+          uploading={uploading}
           config={configStatus}
           message={message}
         />

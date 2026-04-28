@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
@@ -18,7 +19,16 @@ from app.services.ai import answer_question
 from app.services.analytics import analyze_activities
 from app.services.insights import generate_insights
 from app.services.merge import rebuild_canonical_activities
+from app.services.parsers import (
+    InvalidActivityFileError,
+    SUPPORTED_EXTENSIONS,
+    UnsupportedFormatError,
+    parse_activity_file,
+)
 from app.services.sync import sync_provider
+
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 logger = logging.getLogger(__name__)
@@ -134,6 +144,39 @@ def _frontend_redirect(provider: str, status: str, message: str) -> RedirectResp
 @app.post("/trainerroad/link/start")
 def trainerroad_link_start(user_id: UserId) -> dict[str, str]:
     return trainerroad.link_session_placeholder()
+
+
+@app.post("/uploads/activity")
+async def upload_activity(user_id: UserId, file: UploadFile = File(...)) -> dict:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="filename is required")
+    lower = file.filename.lower()
+    if not any(lower.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported file type; supported: {sorted(SUPPORTED_EXTENSIONS)}",
+        )
+
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"file exceeds {MAX_UPLOAD_BYTES} bytes")
+
+    try:
+        activity = await run_in_threadpool(parse_activity_file, file.filename, content)
+    except UnsupportedFormatError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (InvalidActivityFileError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"could not parse activity file: {exc}") from exc
+
+    await run_in_threadpool(repository.upsert_provider_activity, user_id, activity)
+    await run_in_threadpool(rebuild_canonical_activities, user_id)
+    return {
+        "status": "imported",
+        "name": activity.name,
+        "started_at": activity.started_at,
+        "duration_seconds": activity.duration_seconds,
+        "distance_meters": activity.distance_meters,
+    }
 
 
 @app.post("/sync-runs")

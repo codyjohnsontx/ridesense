@@ -5,5 +5,8 @@ requests==2.32.3
 playwright==1.49.1
 openpyxl==3.1.5
 cryptography==44.0.0
+defusedxml==0.7.1
+fitparse==1.2.0
+python-multipart==0.0.20
 pytest==8.3.4
 httpx==0.28.1

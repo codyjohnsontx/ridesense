@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 Provider = Literal["strava", "trainerroad", "all"]
+ActivityProvider = Literal["strava", "trainerroad", "upload"]
 
 
 class AthleteProfile(BaseModel):
@@ -46,7 +47,7 @@ class GroundedAnswer(BaseModel):
 
 
 class ActivityIn(BaseModel):
-    provider: Literal["strava", "trainerroad"]
+    provider: ActivityProvider
     provider_activity_id: str
     name: str
     sport_type: str

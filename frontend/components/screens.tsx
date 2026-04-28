@@ -45,7 +45,13 @@ export function ActivitiesScreen({ activities }: { activities: Activity[] }) {
                     <td className="px-4 py-3 text-muted-foreground">{a.sport_type}</td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className="text-[10.5px]">
-                        {a.source_priority === "strava" ? "Strava" : "TrainerRoad"}
+                        {a.source_priority === "strava"
+                          ? "Strava"
+                          : a.source_priority === "trainerroad"
+                            ? "TrainerRoad"
+                            : a.source_priority === "upload"
+                              ? "Upload"
+                              : a.source_priority}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{a.workout_category ?? "Unclassified"}</td>
@@ -78,7 +84,9 @@ export function ConnectionsScreen({
   onLinkStrava,
   onLinkTrainerRoad,
   onSync,
+  onUploadFile,
   syncing,
+  uploading,
   config,
   message
 }: {
@@ -86,7 +94,9 @@ export function ConnectionsScreen({
   onLinkStrava: () => void;
   onLinkTrainerRoad: () => void;
   onSync: () => void;
+  onUploadFile: (file: File) => void;
   syncing: boolean;
+  uploading: boolean;
   config: ConfigStatus | null;
   message?: string;
 }) {
@@ -178,6 +188,47 @@ export function ConnectionsScreen({
             );
           })}
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload activity file</CardTitle>
+            <CardDescription>
+              Drop a .gpx, .tcx, or .fit export here. Files are parsed locally on the
+              backend, deduplicated against existing rides, and merged into your timeline.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <label
+              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-[12.5px] text-muted-foreground transition hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (uploading) return;
+                const file = e.dataTransfer.files[0];
+                if (file) onUploadFile(file);
+              }}
+            >
+              <Icon name="zap" size={16} />
+              <span>{uploading ? "Uploading…" : "Click to choose or drop a .gpx / .tcx / .fit file"}</span>
+              <input
+                type="file"
+                accept=".gpx,.tcx,.fit"
+                className="sr-only"
+                aria-label="Upload activity file"
+                disabled={uploading}
+                onChange={(e) => {
+                  if (uploading) {
+                    e.target.value = "";
+                    return;
+                  }
+                  const file = e.target.files?.[0];
+                  if (file) onUploadFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
