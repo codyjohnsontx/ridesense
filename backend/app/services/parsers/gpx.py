@@ -3,7 +3,9 @@ from __future__ import annotations
 import math
 from datetime import datetime
 from typing import Any
-from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import ParseError
+
+import defusedxml.ElementTree as ET
 
 
 GPX_NS = {
@@ -28,7 +30,7 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
 def parse_gpx(content: bytes) -> dict[str, Any]:
     try:
         root = ET.fromstring(content)
-    except ET.ParseError as exc:
+    except ParseError as exc:
         raise ValueError(f"Invalid GPX XML: {exc}") from exc
 
     ns_uri = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""

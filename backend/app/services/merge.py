@@ -6,11 +6,17 @@ from difflib import SequenceMatcher
 from app.db import connect
 
 
-_PROVIDER_PRIORITY = {"trainerroad": 3, "strava": 2, "upload": 1}
+_PROVIDER_PRIORITY: dict[str, int] = {"trainerroad": 3, "strava": 2, "upload": 1}
 
 
 def _higher_priority(a: str, b: str) -> str:
-    return a if _PROVIDER_PRIORITY.get(a, 0) >= _PROVIDER_PRIORITY.get(b, 0) else b
+    for name in (a, b):
+        if name not in _PROVIDER_PRIORITY:
+            raise ValueError(
+                f"unknown activity provider: {name!r}. "
+                f"Known providers: {sorted(_PROVIDER_PRIORITY)}"
+            )
+    return a if _PROVIDER_PRIORITY[a] >= _PROVIDER_PRIORITY[b] else b
 
 
 def _parse_dt(value: str) -> datetime:

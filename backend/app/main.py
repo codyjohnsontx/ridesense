@@ -4,6 +4,7 @@ import logging
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
@@ -161,14 +162,14 @@ async def upload_activity(user_id: UserId, file: UploadFile = File(...)) -> dict
         raise HTTPException(status_code=413, detail=f"file exceeds {MAX_UPLOAD_BYTES} bytes")
 
     try:
-        activity = parse_activity_file(file.filename, content)
+        activity = await run_in_threadpool(parse_activity_file, file.filename, content)
     except UnsupportedFormatError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (InvalidActivityFileError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"could not parse activity file: {exc}") from exc
 
-    repository.upsert_provider_activity(user_id, activity)
-    rebuild_canonical_activities(user_id)
+    await run_in_threadpool(repository.upsert_provider_activity, user_id, activity)
+    await run_in_threadpool(rebuild_canonical_activities, user_id)
     return {
         "status": "imported",
         "name": activity.name,

@@ -195,6 +195,7 @@ export function DashboardClient() {
   }
 
   async function uploadFile(file: File) {
+    if (uploading) return;
     setUploading(true);
     try {
       const result = await api.uploadActivity(file, accessToken);

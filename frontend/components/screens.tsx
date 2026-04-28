@@ -199,10 +199,11 @@ export function ConnectionsScreen({
           </CardHeader>
           <CardContent>
             <label
-              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-[12.5px] text-muted-foreground transition hover:bg-muted/50"
+              className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-[12.5px] text-muted-foreground transition hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
+                if (uploading) return;
                 const file = e.dataTransfer.files[0];
                 if (file) onUploadFile(file);
               }}
@@ -212,9 +213,14 @@ export function ConnectionsScreen({
               <input
                 type="file"
                 accept=".gpx,.tcx,.fit"
-                className="hidden"
+                className="sr-only"
+                aria-label="Upload activity file"
                 disabled={uploading}
                 onChange={(e) => {
+                  if (uploading) {
+                    e.target.value = "";
+                    return;
+                  }
                   const file = e.target.files?.[0];
                   if (file) onUploadFile(file);
                   e.target.value = "";

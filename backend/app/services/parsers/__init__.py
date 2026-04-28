@@ -28,7 +28,7 @@ def parse_activity_file(filename: str, content: bytes) -> ActivityIn:
     update the existing row rather than create a duplicate.
     """
     lower = filename.lower()
-    digest = hashlib.sha256(content).hexdigest()[:16]
+    digest = hashlib.sha256(content).hexdigest()
 
     if lower.endswith(".gpx"):
         parsed = parse_gpx(content)

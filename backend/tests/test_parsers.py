@@ -60,6 +60,16 @@ def test_dispatcher_routes_by_extension_and_hashes_for_idempotent_id() -> None:
     assert activity_a.provider_activity_id == activity_b.provider_activity_id
 
 
+def test_provider_activity_id_is_filename_independent() -> None:
+    """Identity must derive from content, not filename — uploading the same
+    bytes under a different name should still upsert into the same row."""
+    content = (FIXTURES / "sample.gpx").read_bytes()
+    activity_a = parse_activity_file("ride.gpx", content)
+    activity_b = parse_activity_file("totally_different_name.gpx", content)
+    assert activity_a.provider_activity_id == activity_b.provider_activity_id
+    assert activity_b.provider == "upload"
+
+
 def test_dispatcher_rejects_unknown_extension() -> None:
     with pytest.raises(UnsupportedFormatError):
         parse_activity_file("workout.xlsx", b"x")

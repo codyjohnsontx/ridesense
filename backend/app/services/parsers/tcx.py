@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element, ParseError
+
+import defusedxml.ElementTree as ET
 
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _findtext(element: ET.Element, path: str, ns: dict[str, str]) -> str | None:
+def _findtext(element: Element, path: str, ns: dict[str, str]) -> str | None:
     found = element.find(path, ns)
     return found.text.strip() if found is not None and found.text else None
 
@@ -17,7 +19,7 @@ def _findtext(element: ET.Element, path: str, ns: dict[str, str]) -> str | None:
 def parse_tcx(content: bytes) -> dict[str, Any]:
     try:
         root = ET.fromstring(content)
-    except ET.ParseError as exc:
+    except ParseError as exc:
         raise ValueError(f"Invalid TCX XML: {exc}") from exc
 
     ns_uri = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else ""
