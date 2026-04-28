@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.services.parsers import (
+    InvalidActivityFileError,
     SUPPORTED_EXTENSIONS,
     UnsupportedFormatError,
     parse_activity_file,
@@ -70,6 +71,40 @@ def test_gpx_parser_rejects_dtd() -> None:
     )
     with pytest.raises(ValueError, match="Invalid GPX"):
         parse_gpx(malicious)
+
+
+def test_gpx_uses_min_max_for_out_of_order_timestamps() -> None:
+    """Trackpoint order in the file should not determine duration —
+    use min/max so a re-stitched GPX still gets a positive duration."""
+    out_of_order = b"""<?xml version="1.0"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <trkseg>
+      <trkpt lat="30.0" lon="-97.0"><time>2026-04-25T13:00:00Z</time></trkpt>
+      <trkpt lat="30.0" lon="-97.0"><time>2026-04-25T12:00:00Z</time></trkpt>
+      <trkpt lat="30.0" lon="-97.0"><time>2026-04-25T12:30:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+    parsed = parse_gpx(out_of_order)
+    assert parsed["started_at"].startswith("2026-04-25T12:00:00")
+    assert parsed["duration_seconds"] == 60 * 60
+
+
+def test_gpx_rejects_mixed_naive_and_aware_timestamps() -> None:
+    """Mixing naive and tz-aware times raises TypeError on subtraction;
+    surface as InvalidActivityFileError so the endpoint returns 422."""
+    mixed = b"""<?xml version="1.0"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <trkseg>
+      <trkpt lat="30.0" lon="-97.0"><time>2026-04-25T12:00:00Z</time></trkpt>
+      <trkpt lat="30.0" lon="-97.0"><time>2026-04-25T13:00:00</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+    with pytest.raises(InvalidActivityFileError, match="naive and timezone-aware"):
+        parse_gpx(mixed)
 
 
 def test_tcx_parser_rejects_dtd() -> None:

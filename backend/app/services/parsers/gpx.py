@@ -8,6 +8,8 @@ from xml.etree.ElementTree import ParseError
 import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
+from .errors import InvalidActivityFileError
+
 
 GPX_NS = {
     "g": "http://www.topografix.com/GPX/1/1",
@@ -63,8 +65,15 @@ def parse_gpx(content: bytes) -> dict[str, Any]:
     if not times:
         raise ValueError("GPX file has no timestamped track points")
 
-    started_at = times[0]
-    duration = int((times[-1] - started_at).total_seconds())
+    try:
+        started_at = min(times)
+        ended_at = max(times)
+        duration = int((ended_at - started_at).total_seconds())
+    except TypeError as exc:
+        raise InvalidActivityFileError(
+            "GPX file mixes naive and timezone-aware timestamps; ensure all "
+            "<time> elements include a timezone offset (e.g. trailing Z)."
+        ) from exc
     if duration <= 0:
         raise ValueError("GPX file duration is zero or negative")
 

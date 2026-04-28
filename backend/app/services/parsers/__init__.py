@@ -4,6 +4,7 @@ import hashlib
 
 from app.schemas import ActivityIn
 
+from .errors import InvalidActivityFileError, UnsupportedFormatError
 from .fit import parse_fit
 from .gpx import parse_gpx
 from .tcx import parse_tcx
@@ -12,12 +13,12 @@ from .tcx import parse_tcx
 SUPPORTED_EXTENSIONS = {".gpx", ".tcx", ".fit"}
 
 
-class UnsupportedFormatError(ValueError):
-    pass
-
-
-class InvalidActivityFileError(ValueError):
-    pass
+__all__ = [
+    "InvalidActivityFileError",
+    "SUPPORTED_EXTENSIONS",
+    "UnsupportedFormatError",
+    "parse_activity_file",
+]
 
 
 def parse_activity_file(filename: str, content: bytes) -> ActivityIn:
