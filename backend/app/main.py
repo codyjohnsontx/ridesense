@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
@@ -29,6 +30,7 @@ from app.services.sync import sync_provider
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+OAUTH_STATE_TTL_SECONDS = 5 * 60
 
 
 logger = logging.getLogger(__name__)
@@ -72,7 +74,11 @@ def integrations(user_id: UserId) -> dict:
 def strava_link_start(user_id: UserId) -> dict[str, str]:
     if not settings.strava_client_id:
         raise HTTPException(status_code=400, detail="Strava client id is not configured")
-    state = seal_json({"user_id": user_id, "provider": "strava"})
+    state = seal_json({
+        "user_id": user_id,
+        "provider": "strava",
+        "issued_at": int(time.time()),
+    })
     return {"authorization_url": strava.authorization_url(state)}
 
 
@@ -96,8 +102,15 @@ def strava_oauth_callback(
     try:
         data = open_json(state)
         user_id = data.get("user_id")
+        issued_at = data.get("issued_at")
         if data.get("provider") != "strava" or not user_id:
             return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+        if not isinstance(issued_at, int) or time.time() - issued_at > OAUTH_STATE_TTL_SECONDS:
+            return _frontend_redirect(
+                "strava",
+                "error",
+                "Strava link expired; please start the link flow again.",
+            )
     except Exception:
         return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
 

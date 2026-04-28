@@ -82,6 +82,40 @@ To enable real auth locally, create a Supabase project and set the following:
   present for the backend to verify Supabase JWTs.
 - `DEV_AUTH_ENABLED=false` in the same root `.env`.
 
+## Connecting Strava
+
+To pull real activities from Strava in local dev:
+
+1. Sign in to https://www.strava.com/settings/api and click **Create &
+   Manage Your App**. Strava only allows one app per account, so reuse
+   any existing one if you have it.
+2. Fill in the form:
+   - **Application Name** — anything (e.g. "RideSense local").
+   - **Category** — Training.
+   - **Website** — `http://localhost:3000`.
+   - **Authorization Callback Domain** — `localhost`. Strava asks for a
+     domain, not a URL; the app sets the full path
+     (`/strava/oauth/callback`) in code.
+3. After creating the app, copy **Client ID** and **Client Secret** into
+   the repo-root `.env`:
+
+   ```bash
+   STRAVA_CLIENT_ID=...
+   STRAVA_CLIENT_SECRET=...
+   STRAVA_REDIRECT_URI=http://localhost:8000/strava/oauth/callback
+   ```
+
+4. Restart the backend so the new env is loaded, then click **Link
+   Strava** on the Connections page. You'll be redirected to Strava,
+   approve the `read,activity:read_all` scopes, and bounce back to the
+   dashboard. Click **Sync now** to pull your activity history.
+
+The OAuth state token is content-encrypted (Fernet) and carries a
+5-minute TTL, so a stolen redirect can't be replayed later. If Strava
+later revokes the refresh token, the connection is automatically marked
+`status="error"` on the next sync attempt and the UI will prompt you to
+relink.
+
 ## Provider Strategy
 
 - **Strava** uses official OAuth (authorize → code exchange → refresh).

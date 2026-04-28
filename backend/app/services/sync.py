@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from app import repository
@@ -9,6 +10,17 @@ from app.services.merge import rebuild_canonical_activities
 from app.services.normalization import normalize_strava_activity
 
 
+logger = logging.getLogger(__name__)
+
+
+class StravaTokenRefreshError(RuntimeError):
+    """Raised when refresh_access_token fails (revoked, expired, network).
+
+    The connection is marked status='error' before this is raised so the
+    UI can surface the relink prompt without the caller doing extra work.
+    """
+
+
 def sync_strava(user_id: str) -> int:
     connection = repository.get_connection(user_id, "strava")
     if not connection:
@@ -16,7 +28,14 @@ def sync_strava(user_id: str) -> int:
 
     secret = open_json(connection["encrypted_secret"])
     if int(secret.get("expires_at") or 0) <= int(time.time()) + 60:
-        secret = strava.refresh_access_token(secret["refresh_token"])
+        try:
+            secret = strava.refresh_access_token(secret["refresh_token"])
+        except Exception as exc:
+            logger.warning("Strava token refresh failed for user %s: %s", user_id, exc)
+            repository.set_connection_status(user_id, "strava", "error")
+            raise StravaTokenRefreshError(
+                "Strava refresh failed; the user must relink the connection."
+            ) from exc
         repository.save_connection(
             user_id=user_id,
             provider="strava",
