@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 
 import pytest
 
 from app import security
 from app.security import open_json, seal_json
+
+
+@pytest.fixture(autouse=True)
+def force_development_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin app_env=development so the weak-secret guard does not make
+    tests using the default APP_SECRET_KEY brittle to ambient APP_ENV.
+    Tests that need a non-development env (e.g. the guard tests) override
+    via their own monkeypatch.setattr; pytest unwinds in reverse order."""
+    monkeypatch.setattr(security, "settings", replace(security.settings, app_env="development"))
 
 
 def test_seal_open_roundtrip() -> None:
@@ -34,8 +44,6 @@ def test_open_rejects_tampered_token() -> None:
 
 
 def test_open_rejects_token_from_different_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    from dataclasses import replace
-
     monkeypatch.setattr(security, "settings", replace(security.settings, app_secret_key="key-one"))
     token = seal_json({"user_id": "demo-user"})
 
@@ -47,8 +55,6 @@ def test_open_rejects_token_from_different_key(monkeypatch: pytest.MonkeyPatch) 
 def test_fernet_rejects_default_secret_outside_development(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from dataclasses import replace
-
     monkeypatch.setattr(
         security,
         "settings",
@@ -61,8 +67,6 @@ def test_fernet_rejects_default_secret_outside_development(
 def test_fernet_rejects_short_secret_outside_development(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from dataclasses import replace
-
     monkeypatch.setattr(
         security,
         "settings",
@@ -76,8 +80,6 @@ def test_fernet_allows_default_secret_in_development(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Local dev must keep working with the .env.example default."""
-    from dataclasses import replace
-
     monkeypatch.setattr(
         security,
         "settings",
