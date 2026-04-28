@@ -110,6 +110,57 @@ def test_sync_strava_marks_connection_error_when_refresh_payload_incomplete(
     save_call.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        pytest.param({"access_token": True, "refresh_token": "r", "expires_at": 1}, id="bool-token"),
+        pytest.param({"access_token": "", "refresh_token": "r", "expires_at": 1}, id="empty-token"),
+        pytest.param({"access_token": "a", "refresh_token": ["x"], "expires_at": 1}, id="list-refresh"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": "abc"}, id="non-numeric-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r"}, id="missing-expiry"),
+    ],
+)
+def test_refresh_payload_validation_rejects_malformed(
+    monkeypatch: pytest.MonkeyPatch, bad_payload: dict
+) -> None:
+    monkeypatch.setattr(sync_module.repository, "get_connection", lambda *_a, **_k: _connection())
+    monkeypatch.setattr(sync_module, "open_json", lambda _t: {"access_token": "old", "refresh_token": "r", "expires_at": 0})
+    monkeypatch.setattr(sync_module.strava, "refresh_access_token", lambda _r: bad_payload)
+    set_status = Mock()
+    monkeypatch.setattr(sync_module.repository, "set_connection_status", set_status)
+    save_call = Mock()
+    monkeypatch.setattr(sync_module.repository, "save_connection", save_call)
+
+    with pytest.raises(StravaTokenRefreshError, match="incomplete"):
+        sync_strava("demo-user")
+
+    set_status.assert_called_once_with("demo-user", "strava", "error")
+    save_call.assert_not_called()
+
+
+def test_refresh_payload_validation_accepts_numeric_string_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strava sometimes serializes expires_at as a string in OAuth-y payloads;
+    accept the parseable form so a real-world response doesn't trip the guard."""
+    monkeypatch.setattr(sync_module.repository, "get_connection", lambda *_a, **_k: _connection())
+    monkeypatch.setattr(sync_module, "open_json", lambda _t: {"access_token": "old", "refresh_token": "r", "expires_at": 0})
+    monkeypatch.setattr(
+        sync_module.strava,
+        "refresh_access_token",
+        lambda _r: {"access_token": "new", "refresh_token": "r2", "expires_at": "9999999999"},
+    )
+    save_call = Mock()
+    monkeypatch.setattr(sync_module.repository, "save_connection", save_call)
+    monkeypatch.setattr(sync_module, "seal_json", lambda payload: f"sealed:{payload['access_token']}")
+    monkeypatch.setattr(sync_module.strava, "list_activities", lambda *_a, **_k: ([], {}))
+    monkeypatch.setattr(sync_module, "rebuild_canonical_activities", lambda _u: None)
+
+    sync_strava("demo-user")  # must not raise
+
+    save_call.assert_called_once()
+
+
 def test_sync_strava_paginates_and_filters_non_cycling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,4 +188,6 @@ def test_sync_strava_paginates_and_filters_non_cycling(
 
     # 100 from page 1, 2 cycling rides from page 2 (the Run is filtered out).
     assert count == 102
-    assert "102" not in upserts  # the Run did not get persisted
+    # Normalize to int so a future change to provider_activity_id's runtime
+    # type can't silently let a Run sneak through.
+    assert 102 not in {int(x) for x in upserts}

@@ -25,10 +25,39 @@ class StravaTokenRefreshError(RuntimeError):
 _REQUIRED_REFRESH_FIELDS = ("access_token", "refresh_token", "expires_at")
 
 
+def _is_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _is_numeric_timestamp(value: object) -> bool:
+    """expires_at must convert cleanly to int. Accept int, float, or a
+    numeric string. Reject bool explicitly (isinstance(True, int) is True
+    in Python and would otherwise sneak past the int branch)."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        try:
+            int(value)
+        except ValueError:
+            return False
+        return True
+    return False
+
+
 def _refresh_payload_is_valid(payload: object) -> bool:
     if not isinstance(payload, dict):
         return False
-    return all(payload.get(field) for field in _REQUIRED_REFRESH_FIELDS)
+    if not all(field in payload for field in _REQUIRED_REFRESH_FIELDS):
+        return False
+    if not _is_non_empty_string(payload["access_token"]):
+        return False
+    if not _is_non_empty_string(payload["refresh_token"]):
+        return False
+    if not _is_numeric_timestamp(payload["expires_at"]):
+        return False
+    return True
 
 
 def sync_strava(user_id: str) -> int:
