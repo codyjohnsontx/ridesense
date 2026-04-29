@@ -1,12 +1,14 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from app import db, repository
-from app.main import app
+from app.main import _utc_day_end, app
 from app.schemas import ActivityIn, AthleteProfile
+from app.services.analytics import analyze_activities
+from app.services.normalization import iso_utc
 from app.services.merge import rebuild_canonical_activities
 
 
@@ -91,6 +93,37 @@ def test_activities_support_offset_pagination(tmp_path, monkeypatch):
 
     assert [a["name"] for a in first_page["activities"]] == ["API Threshold"]
     assert [a["name"] for a in second_page["activities"]] == ["API Endurance"]
+
+
+def test_repository_range_filters_include_utc_day_end_with_z_and_isoformat_timestamps(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    end_at = _utc_day_end(date(2025, 1, 2))
+    isoformat_timestamp = datetime(2025, 1, 2, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+
+    with db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO canonical_activities (
+                user_id, name, sport_type, started_at, duration_seconds, source_priority
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("demo-user", "Z boundary ride", "Ride", "2025-01-02T23:59:59Z", 1800, "strava"),
+                ("demo-user", "Isoformat boundary ride", "Ride", isoformat_timestamp, 1800, "upload"),
+            ],
+        )
+
+    activities = repository.list_canonical_activities("demo-user", start_at=None, end_at=end_at)
+    analysis = analyze_activities(
+        activities,
+        start_at=iso_utc("2025-01-02T00:00:00Z"),
+        end_at=end_at,
+    )
+
+    assert {a["name"] for a in activities} == {"Z boundary ride", "Isoformat boundary ride"}
+    assert repository.count_canonical_activities("demo-user", start_at=None, end_at=end_at) == 2
+    assert analysis["meta"]["recent_activities"] == 2
 
 
 def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_path, monkeypatch):

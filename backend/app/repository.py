@@ -232,10 +232,10 @@ def count_canonical_activities(
     clauses = ["user_id = ?"]
     params: list[Any] = [user_id]
     if start_at is not None:
-        clauses.append("started_at >= ?")
+        clauses.append("datetime(started_at) >= datetime(?)")
         params.append(start_at)
     if end_at is not None:
-        clauses.append("started_at <= ?")
+        clauses.append("datetime(started_at) <= datetime(?)")
         params.append(end_at)
 
     with connect() as conn:
@@ -259,10 +259,10 @@ def list_canonical_activities(
     clauses = ["user_id = ?"]
     params: list[Any] = [user_id]
     if start_at is not None:
-        clauses.append("started_at >= ?")
+        clauses.append("datetime(started_at) >= datetime(?)")
         params.append(start_at)
     if end_at is not None:
-        clauses.append("started_at <= ?")
+        clauses.append("datetime(started_at) <= datetime(?)")
         params.append(end_at)
 
     limit_sql = ""

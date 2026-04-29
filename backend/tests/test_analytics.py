@@ -78,6 +78,12 @@ def test_analyze_activities_uses_explicit_range_bounds_before_weeks_cutoff():
     )
 
     assert result["meta"]["recent_activities"] == 1
+    assert result["meta"]["range"] == {
+        "mode": "custom",
+        "label": "2025-01-02 to 2025-01-02",
+        "start_date": "2025-01-02",
+        "end_date": "2025-01-02",
+    }
     assert result["summary"]["total_recent_load"] == 40
 
 
