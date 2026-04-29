@@ -274,8 +274,9 @@ def _range_options(
 
     selected_weeks = weeks or 12
     range_end = datetime.now(timezone.utc)
+    range_start = range_end - timedelta(weeks=selected_weeks)
     end_at = range_end.isoformat()
-    start_at = (range_end - timedelta(weeks=selected_weeks)).isoformat()
+    start_at = range_start.isoformat()
     return {
         "mode": "preset",
         "label": f"Last {selected_weeks} weeks",
@@ -285,8 +286,8 @@ def _range_options(
         "meta": {
             "mode": "preset",
             "label": f"Last {selected_weeks} weeks",
-            "start_date": start_at,
-            "end_date": end_at,
+            "start_date": range_start.date().isoformat(),
+            "end_date": range_end.date().isoformat(),
         },
     }
 

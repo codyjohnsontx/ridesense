@@ -24,13 +24,17 @@ function formatLastSync(iso?: string | null) {
   return d.toLocaleString("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function utcEndOfDay(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 23, 59, 59, 999));
+}
+
 function rangeEndDate(range: TimeRange, activities: Activity[]) {
   if (range.mode === "custom") return new Date(`${range.endDate}T23:59:59.999Z`);
   if (range.mode === "all" && activities.length > 0) {
     const latest = Math.max(...activities.map((a) => new Date(a.started_at).getTime()).filter(Number.isFinite));
-    if (Number.isFinite(latest)) return new Date(latest);
+    if (Number.isFinite(latest)) return utcEndOfDay(new Date(latest));
   }
-  return new Date();
+  return utcEndOfDay(new Date());
 }
 
 export function Dashboard({

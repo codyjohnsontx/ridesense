@@ -107,6 +107,8 @@ def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_p
     assert dashboard["analysis"]["meta"]["range"]["mode"] == "preset"
     assert dashboard["analysis"]["meta"]["range"]["start_date"] is not None
     assert dashboard["analysis"]["meta"]["range"]["end_date"] is not None
+    assert "T" not in dashboard["analysis"]["meta"]["range"]["start_date"]
+    assert "T" not in dashboard["analysis"]["meta"]["range"]["end_date"]
     assert dashboard["analysis"]["summary"]["total_recent_load"] == 165
     assert [a["name"] for a in activities["activities"]] == ["API Threshold", "API Endurance"]
     assert activities["total_activities"] == 3
