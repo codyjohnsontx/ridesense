@@ -272,7 +272,7 @@ def test_strava_callback_rejects_missing_activity_scope(monkeypatch):
     save_connection.assert_not_called()
 
 
-def test_strava_callback_uses_callback_scope_when_token_payload_omits_scope(monkeypatch):
+def test_strava_callback_rejects_missing_token_scope_even_when_callback_scope_is_present(monkeypatch):
     save_connection = Mock()
 
     def fake_exchange_code(_code):
@@ -298,8 +298,8 @@ def test_strava_callback_uses_callback_scope_when_token_payload_omits_scope(monk
     )
 
     assert response.status_code in {302, 307}
-    assert "status=connected" in response.headers["location"]
-    assert save_connection.call_args.kwargs["scopes"] == "activity:read_all,profile:read_all,read"
+    assert "status=error" in response.headers["location"]
+    save_connection.assert_not_called()
 
 
 def test_strava_callback_handles_denied_authorization(monkeypatch):

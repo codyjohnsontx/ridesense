@@ -57,6 +57,30 @@ def test_analyze_activities_supports_selected_all_time_window_with_total_count()
     assert result["summary"]["total_recent_load"] == 40
 
 
+def test_analyze_activities_uses_explicit_range_bounds_before_weeks_cutoff():
+    activities = [
+        {
+            "name": "Bounded Ride",
+            "started_at": "2025-01-02T12:00:00+00:00",
+            "duration_seconds": 3600,
+            "tss": 40,
+            "estimated_load": None,
+            "workout_category": "Endurance",
+            "source_priority": "strava",
+        }
+    ]
+
+    result = analyze_activities(
+        activities,
+        weeks=12,
+        start_at="2025-01-02T00:00:00+00:00",
+        end_at="2025-01-02T23:59:59.999999+00:00",
+    )
+
+    assert result["meta"]["recent_activities"] == 1
+    assert result["summary"]["total_recent_load"] == 40
+
+
 def test_generate_insights_flags_intensity_heavy_distribution():
     analysis = {
         "meta": {"recent_activities": 8},

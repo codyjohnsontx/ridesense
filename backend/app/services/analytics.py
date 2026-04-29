@@ -22,13 +22,26 @@ def load_value(activity: dict[str, Any]) -> float:
 def analyze_activities(
     activities: list[dict[str, Any]],
     weeks: int | None = 12,
+    start_at: str | None = None,
+    end_at: str | None = None,
     total_activities: int | None = None,
     range_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    if weeks is None:
+    if start_at is not None or end_at is not None:
+        start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00")) if start_at is not None else None
+        end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00")) if end_at is not None else None
+        recent = []
+        for activity in activities:
+            started_at = datetime.fromisoformat(activity["started_at"].replace("Z", "+00:00"))
+            if start_dt is not None and started_at < start_dt:
+                continue
+            if end_dt is not None and started_at > end_dt:
+                continue
+            recent.append(activity)
+    elif weeks is None:
         recent = activities
     else:
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(weeks=weeks)
         recent = [
             a

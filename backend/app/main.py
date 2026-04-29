@@ -37,10 +37,15 @@ OAUTH_STATE_TTL_SECONDS = 5 * 60
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Training Insights API", version="0.1.0")
+dev_origin_regex = (
+    r"^http://(localhost|127\.0\.0\.1):\d+$"
+    if settings.app_env.lower() in {"development", "dev", "local", "test"}
+    else None
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin, "http://localhost:3000"],
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
+    allow_origin_regex=dev_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -141,9 +146,6 @@ def strava_oauth_callback(
         return _frontend_redirect(
             "strava", "error", "Incomplete token response from Strava.", data.get("return_origin")
         )
-
-    if scope and not token_payload.get("scope"):
-        token_payload["scope"] = scope
 
     if not strava.has_required_scopes(token_payload):
         logger.warning(
@@ -275,10 +277,10 @@ def _range_options(
         }
 
     selected_weeks = weeks or 12
-    range_end = datetime.now(timezone.utc)
+    range_end = datetime.now(timezone.utc).date()
     range_start = range_end - timedelta(weeks=selected_weeks)
-    end_at = range_end.isoformat()
-    start_at = range_start.isoformat()
+    start_at = _utc_day_start(range_start)
+    end_at = _utc_day_end(range_end)
     return {
         "mode": "preset",
         "label": f"Last {selected_weeks} weeks",
@@ -288,8 +290,8 @@ def _range_options(
         "meta": {
             "mode": "preset",
             "label": f"Last {selected_weeks} weeks",
-            "start_date": range_start.date().isoformat(),
-            "end_date": range_end.date().isoformat(),
+            "start_date": range_start.isoformat(),
+            "end_date": range_end.isoformat(),
         },
     }
 
@@ -423,6 +425,8 @@ def dashboard(
     analysis = analyze_activities(
         activities,
         weeks=selected_range["weeks"],
+        start_at=selected_range["start_at"],
+        end_at=selected_range["end_at"],
         total_activities=total_activities,
         range_meta=selected_range["meta"],
     )
@@ -452,6 +456,8 @@ def insights(
             end_at=selected_range["end_at"],
         ),
         weeks=selected_range["weeks"],
+        start_at=selected_range["start_at"],
+        end_at=selected_range["end_at"],
         total_activities=repository.count_canonical_activities(user_id),
         range_meta=selected_range["meta"],
     )
@@ -477,6 +483,8 @@ def questions(
             end_at=selected_range["end_at"],
         ),
         weeks=selected_range["weeks"],
+        start_at=selected_range["start_at"],
+        end_at=selected_range["end_at"],
         total_activities=repository.count_canonical_activities(user_id),
         range_meta=selected_range["meta"],
     )
