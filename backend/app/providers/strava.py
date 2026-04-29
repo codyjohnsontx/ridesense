@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from urllib.parse import urlencode
 
 import requests
@@ -19,7 +20,7 @@ def authorization_url(state: str) -> str:
         "client_id": settings.strava_client_id,
         "redirect_uri": settings.strava_redirect_uri,
         "response_type": "code",
-        "approval_prompt": "auto",
+        "approval_prompt": "force",
         "scope": REQUESTED_SCOPES,
         "state": state,
     }
@@ -31,7 +32,7 @@ def accepted_scopes(payload: dict) -> set[str]:
     if scope_value is None:
         return set()
     if isinstance(scope_value, str):
-        return {scope.strip() for scope in scope_value.split(",") if scope.strip()}
+        return {scope.strip() for scope in re.split(r"[\s,]+", scope_value) if scope.strip()}
     if isinstance(scope_value, list):
         return {str(scope).strip() for scope in scope_value if str(scope).strip()}
     return set()
@@ -71,11 +72,23 @@ def refresh_access_token(refresh_token: str) -> dict:
     return response.json()
 
 
-def list_activities(access_token: str, page: int = 1, per_page: int = 100) -> tuple[list[dict], dict[str, str]]:
+def list_activities(
+    access_token: str,
+    page: int = 1,
+    per_page: int = 200,
+    before: int | None = None,
+    after: int | None = None,
+) -> tuple[list[dict], dict[str, str]]:
+    params = {"page": page, "per_page": per_page}
+    if before is not None:
+        params["before"] = before
+    if after is not None:
+        params["after"] = after
+
     response = requests.get(
         f"{API_URL}/athlete/activities",
         headers={"Authorization": f"Bearer {access_token}"},
-        params={"page": page, "per_page": per_page},
+        params=params,
         timeout=30,
     )
     response.raise_for_status()

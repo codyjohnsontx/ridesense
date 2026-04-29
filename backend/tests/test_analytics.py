@@ -30,6 +30,33 @@ def test_analyze_activities_detects_load_trend():
     assert result["zone_breakdown"]["Threshold"]["load"] == 110
 
 
+def test_analyze_activities_supports_selected_all_time_window_with_total_count():
+    activities = [
+        {
+            "name": "Old Ride",
+            "started_at": "2025-01-02T12:00:00+00:00",
+            "duration_seconds": 3600,
+            "tss": 40,
+            "estimated_load": None,
+            "workout_category": "Endurance",
+            "source_priority": "strava",
+        }
+    ]
+
+    result = analyze_activities(
+        activities,
+        weeks=None,
+        total_activities=12,
+        range_meta={"mode": "all", "label": "All time", "start_date": None, "end_date": None},
+    )
+
+    assert result["meta"]["total_activities"] == 12
+    assert result["meta"]["recent_activities"] == 1
+    assert result["meta"]["weeks"] is None
+    assert result["meta"]["range"]["mode"] == "all"
+    assert result["summary"]["total_recent_load"] == 40
+
+
 def test_generate_insights_flags_intensity_heavy_distribution():
     analysis = {
         "meta": {"recent_activities": 8},

@@ -1,11 +1,12 @@
 "use client";
 
-import type { Activity, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import type { Activity, DashboardResponse, GroundedAnswer, TimeRange } from "@/lib/api";
 import { buildDailyTss, buildZoneRows, computeFormSeries, deriveVerdict } from "@/lib/training";
 import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar } from "./charts";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Delta, Input, Tabs } from "./ui";
+import { TimeRangeControl } from "./TimeRangeControl";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Delta, Input } from "./ui";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit" });
@@ -23,9 +24,18 @@ function formatLastSync(iso?: string | null) {
   return d.toLocaleString("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+function rangeEndDate(range: TimeRange, activities: Activity[]) {
+  if (range.mode === "custom") return new Date(`${range.endDate}T00:00:00`);
+  if (range.mode === "all" && activities.length > 0) {
+    const latest = Math.max(...activities.map((a) => new Date(a.started_at).getTime()).filter(Number.isFinite));
+    if (Number.isFinite(latest)) return new Date(latest);
+  }
+  return new Date();
+}
+
 export function Dashboard({
   dashboard,
-  range,
+  timeRange,
   rangeDays,
   onRangeChange,
   onSync,
@@ -41,9 +51,9 @@ export function Dashboard({
   onClearMessage
 }: {
   dashboard: DashboardResponse;
-  range: "4w" | "12w" | "6mo" | "1y";
+  timeRange: TimeRange;
   rangeDays: number;
-  onRangeChange: (r: "4w" | "12w" | "6mo" | "1y") => void;
+  onRangeChange: (r: TimeRange) => void;
   onSync: () => void;
   syncing: boolean;
   question: string;
@@ -57,7 +67,8 @@ export function Dashboard({
   onClearMessage?: () => void;
 }) {
   const topActivities = dashboard.analysis.top_workouts;
-  const daily = buildDailyTss(activities, rangeDays);
+  const chartEndDate = rangeEndDate(timeRange, activities);
+  const daily = buildDailyTss(activities, rangeDays, chartEndDate);
   const form = computeFormSeries(daily);
   const verdict = deriveVerdict(form, dashboard.analysis.weekly);
   const weekly = dashboard.analysis.weekly;
@@ -87,21 +98,12 @@ export function Dashboard({
   return (
     <>
       <PageHeader
-        eyebrow={`Last ${range}`}
+        eyebrow={timeRange.label}
         title="State of training"
         subtitle="Deterministic metrics first. AI interpretation second."
         right={
           <>
-            <Tabs
-              value={range}
-              onChange={(v) => onRangeChange(v as typeof range)}
-              options={[
-                { value: "4w", label: "4w" },
-                { value: "12w", label: "12w" },
-                { value: "6mo", label: "6mo" },
-                { value: "1y", label: "1y" }
-              ]}
-            />
+            <TimeRangeControl range={timeRange} onChange={onRangeChange} />
             <Button variant="outline" size="sm" onClick={onExport} disabled={activities.length === 0}>
               <Icon name="download" size={13} />
               Export
@@ -200,7 +202,7 @@ export function Dashboard({
                 <FormFitnessCurve ctl={form.ctl} atl={form.atl} tsb={form.tsb} h={210} />
                 <div className="mono absolute right-2 top-2 rounded-md border border-border bg-popover px-2.5 py-2 text-[11.5px] leading-snug shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
                   <div className="mb-1 font-semibold">
-                    {new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit" })} · today
+                    {chartEndDate.toLocaleDateString("en-US", { month: "short", day: "2-digit" })} · range end
                   </div>
                   <div className="text-muted-foreground">
                     CTL <span className="text-foreground">{form.ctlNow.toFixed(0)}</span>
@@ -241,7 +243,7 @@ export function Dashboard({
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr_1.3fr_1.4fr]">
           <Card>
             <CardHeader>
-              <CardTitle>Zone distribution · {range}</CardTitle>
+              <CardTitle>Zone distribution · {timeRange.label}</CardTitle>
               <CardDescription>Where the load went</CardDescription>
             </CardHeader>
             <CardContent>
@@ -451,7 +453,7 @@ export function Dashboard({
             <Card>
               <CardHeader>
                 <CardTitle>Window load</CardTitle>
-                <CardDescription>{dashboard.analysis.meta.weeks}-week total</CardDescription>
+                <CardDescription>{timeRange.label} total</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-2.5">

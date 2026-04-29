@@ -47,8 +47,9 @@ def test_sync_strava_refreshes_expired_token_and_persists_new_secret(
     monkeypatch.setattr(sync_module, "seal_json", lambda payload: f"sealed:{payload['access_token']}")
     list_calls: list[int] = []
 
-    def fake_list(access_token: str, page: int = 1, per_page: int = 100):  # noqa: ARG001
+    def fake_list(access_token: str, page: int = 1, per_page: int = 200):  # noqa: ARG001
         list_calls.append(page)
+        assert per_page == sync_module.STRAVA_PAGE_SIZE
         assert access_token == "new"  # refreshed token must reach Strava
         return ([_strava_activity(1)], {})
 
@@ -194,11 +195,16 @@ def test_sync_strava_paginates_and_filters_non_cycling(
     monkeypatch.setattr(sync_module, "open_json", lambda _t: {"access_token": "ok", "refresh_token": "r", "expires_at": 9_999_999_999})
 
     pages = {
-        1: [_strava_activity(i) for i in range(100)],
-        2: [_strava_activity(101), _strava_activity(102, sport="Run"), _strava_activity(103)],
+        1: [_strava_activity(i) for i in range(sync_module.STRAVA_PAGE_SIZE)],
+        2: [
+            _strava_activity(201),
+            _strava_activity(202, sport="Run"),
+            _strava_activity(203),
+        ],
     }
 
     def fake_list(_access_token: str, page: int = 1, per_page: int = 100):  # noqa: ARG001
+        assert per_page == sync_module.STRAVA_PAGE_SIZE
         return (pages.get(page, []), {})
 
     monkeypatch.setattr(sync_module.strava, "list_activities", fake_list)
@@ -216,8 +222,8 @@ def test_sync_strava_paginates_and_filters_non_cycling(
 
     count = sync_strava("demo-user")
 
-    # 100 from page 1, 2 cycling rides from page 2 (the Run is filtered out).
-    assert count == 102
+    # Full first page, 2 cycling rides from page 2 (the Run is filtered out).
+    assert count == sync_module.STRAVA_PAGE_SIZE + 2
     # Normalize to int so a future change to provider_activity_id's runtime
     # type can't silently let a Run sneak through.
-    assert 102 not in {int(x) for x in upserts}
+    assert 202 not in {int(x) for x in upserts}

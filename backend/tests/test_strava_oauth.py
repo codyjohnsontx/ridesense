@@ -1,14 +1,115 @@
 import time
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.security import seal_json
+from app.providers import strava
+from app.security import open_json, seal_json
 
 
 def _fresh_state(user_id: str = "user-1", provider: str = "strava") -> str:
     return seal_json({"user_id": user_id, "provider": provider, "issued_at": int(time.time())})
+
+
+def test_strava_authorization_url_forces_scope_reapproval():
+    url = strava.authorization_url("state-1")
+
+    params = parse_qs(urlparse(url).query)
+
+    assert params["approval_prompt"] == ["force"]
+    assert params["scope"] == [strava.REQUESTED_SCOPES]
+    assert params["state"] == ["state-1"]
+
+
+def test_strava_accepted_scopes_handles_comma_and_space_separated_values():
+    assert strava.accepted_scopes({"scope": "read,activity:read_all,profile:read_all"}) == {
+        "read",
+        "activity:read_all",
+        "profile:read_all",
+    }
+    assert strava.accepted_scopes({"scope": "read activity:read_all profile:read_all"}) == {
+        "read",
+        "activity:read_all",
+        "profile:read_all",
+    }
+
+
+def test_strava_list_activities_sends_pagination_and_date_filters(monkeypatch):
+    class FakeResponse:
+        headers = {"X-RateLimit-Limit": "100,1000", "Content-Type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [{"id": 1}]
+
+    get_call = Mock(return_value=FakeResponse())
+    monkeypatch.setattr(strava.requests, "get", get_call)
+
+    activities, rate_headers = strava.list_activities(
+        "access-token", page=3, per_page=200, before=1_700_000_000, after=1_600_000_000
+    )
+
+    assert activities == [{"id": 1}]
+    assert rate_headers == {"X-RateLimit-Limit": "100,1000"}
+    assert get_call.call_args.kwargs["headers"] == {"Authorization": "Bearer access-token"}
+    assert get_call.call_args.kwargs["params"] == {
+        "page": 3,
+        "per_page": 200,
+        "before": 1_700_000_000,
+        "after": 1_600_000_000,
+    }
+
+
+def test_strava_link_start_stores_local_return_origin_in_state(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.settings",
+        SimpleNamespace(strava_client_id="client", frontend_origin="http://localhost:3000"),
+    )
+    monkeypatch.setattr(
+        strava,
+        "settings",
+        SimpleNamespace(strava_client_id="client", strava_redirect_uri="http://localhost:8000/strava/oauth/callback"),
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/strava/link/start",
+        headers={"Origin": "http://localhost:3002"},
+    )
+
+    assert response.status_code == 200
+    params = parse_qs(urlparse(response.json()["authorization_url"]).query)
+    state = open_json(params["state"][0])
+    assert state["user_id"] == "demo-user"
+    assert state["return_origin"] == "http://localhost:3002"
+
+
+def test_strava_link_start_rejects_untrusted_return_origin(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.settings",
+        SimpleNamespace(strava_client_id="client", frontend_origin="http://localhost:3000"),
+    )
+    monkeypatch.setattr(
+        strava,
+        "settings",
+        SimpleNamespace(strava_client_id="client", strava_redirect_uri="http://localhost:8000/strava/oauth/callback"),
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/strava/link/start",
+        headers={"Origin": "https://evil.example"},
+    )
+
+    assert response.status_code == 200
+    params = parse_qs(urlparse(response.json()["authorization_url"]).query)
+    state = open_json(params["state"][0])
+    assert state["return_origin"] is None
 
 
 def test_strava_callback_saves_connection_with_required_scopes(monkeypatch):
@@ -45,6 +146,39 @@ def test_strava_callback_saves_connection_with_required_scopes(monkeypatch):
     assert saved["scopes"] == "activity:read_all,profile:read_all,read"
 
 
+def test_strava_callback_redirects_to_state_return_origin(monkeypatch):
+    def fake_exchange_code(_code):
+        return {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "expires_at": 1234567890,
+            "scope": "read,activity:read_all",
+            "athlete": {"id": 42},
+        }
+
+    monkeypatch.setattr("app.providers.strava.exchange_code", fake_exchange_code)
+    monkeypatch.setattr("app.repository.save_connection", Mock())
+    state = seal_json(
+        {
+            "user_id": "user-1",
+            "provider": "strava",
+            "issued_at": int(time.time()),
+            "return_origin": "http://localhost:3002",
+        }
+    )
+
+    client = TestClient(app)
+    response = client.get(
+        "/strava/oauth/callback",
+        params={"code": "good-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"].startswith("http://localhost:3002/?")
+    assert "status=connected" in response.headers["location"]
+
+
 def test_strava_callback_rejects_missing_activity_scope(monkeypatch):
     save_connection = Mock()
 
@@ -70,6 +204,36 @@ def test_strava_callback_rejects_missing_activity_scope(monkeypatch):
     assert response.status_code in {302, 307}
     assert "status=error" in response.headers["location"]
     save_connection.assert_not_called()
+
+
+def test_strava_callback_uses_callback_scope_when_token_payload_omits_scope(monkeypatch):
+    save_connection = Mock()
+
+    def fake_exchange_code(_code):
+        return {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "expires_at": 1234567890,
+            "athlete": {"id": 42},
+        }
+
+    monkeypatch.setattr("app.providers.strava.exchange_code", fake_exchange_code)
+    monkeypatch.setattr("app.repository.save_connection", save_connection)
+
+    client = TestClient(app)
+    response = client.get(
+        "/strava/oauth/callback",
+        params={
+            "code": "good-code",
+            "state": _fresh_state(),
+            "scope": "read,activity:read_all,profile:read_all",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    assert "status=connected" in response.headers["location"]
+    assert save_connection.call_args.kwargs["scopes"] == "activity:read_all,profile:read_all,read"
 
 
 def test_strava_callback_handles_denied_authorization(monkeypatch):

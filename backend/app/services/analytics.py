@@ -19,14 +19,22 @@ def load_value(activity: dict[str, Any]) -> float:
     return 0.0
 
 
-def analyze_activities(activities: list[dict[str, Any]], weeks: int = 12) -> dict[str, Any]:
+def analyze_activities(
+    activities: list[dict[str, Any]],
+    weeks: int | None = 12,
+    total_activities: int | None = None,
+    range_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(weeks=weeks)
-    recent = [
-        a
-        for a in activities
-        if datetime.fromisoformat(a["started_at"].replace("Z", "+00:00")) >= cutoff
-    ]
+    if weeks is None:
+        recent = activities
+    else:
+        cutoff = now - timedelta(weeks=weeks)
+        recent = [
+            a
+            for a in activities
+            if datetime.fromisoformat(a["started_at"].replace("Z", "+00:00")) >= cutoff
+        ]
 
     weekly: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"week_start": "", "load": 0.0, "count": 0, "duration_hours": 0.0}
@@ -62,9 +70,16 @@ def analyze_activities(activities: list[dict[str, Any]], weeks: int = 12) -> dic
 
     return {
         "meta": {
-            "total_activities": len(activities),
+            "total_activities": total_activities if total_activities is not None else len(activities),
             "recent_activities": len(recent),
             "weeks": weeks,
+            "range": range_meta
+            or {
+                "mode": "preset",
+                "label": f"Last {weeks} weeks" if weeks is not None else "All time",
+                "start_date": None,
+                "end_date": None,
+            },
         },
         "summary": {
             "latest_week_load": round(latest, 1),

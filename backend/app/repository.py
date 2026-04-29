@@ -224,16 +224,45 @@ def list_provider_activities(user_id: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def list_canonical_activities(user_id: str, limit: int = 500, offset: int = 0) -> list[dict[str, Any]]:
+def count_canonical_activities(user_id: str) -> int:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM canonical_activities WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    return int(row["count"])
+
+
+def list_canonical_activities(
+    user_id: str,
+    limit: int | None = 500,
+    offset: int = 0,
+    start_at: str | None = None,
+    end_at: str | None = None,
+) -> list[dict[str, Any]]:
+    clauses = ["user_id = ?"]
+    params: list[Any] = [user_id]
+    if start_at is not None:
+        clauses.append("started_at >= ?")
+        params.append(start_at)
+    if end_at is not None:
+        clauses.append("started_at <= ?")
+        params.append(end_at)
+
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM canonical_activities
-            WHERE user_id = ?
+            WHERE {" AND ".join(clauses)}
             ORDER BY started_at DESC, id DESC
-            LIMIT ? OFFSET ?
+            {limit_sql}
             """,
-            (user_id, limit, offset),
+            params,
         ).fetchall()
     return [dict(row) for row in rows]
 

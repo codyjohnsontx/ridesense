@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 import time
-from urllib.parse import urlencode
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
+from urllib.parse import urlencode, urlparse
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -39,6 +40,7 @@ app = FastAPI(title="Training Insights API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin, "http://localhost:3000"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,13 +73,14 @@ def integrations(user_id: UserId) -> dict:
 
 
 @app.post("/strava/link/start")
-def strava_link_start(user_id: UserId) -> dict[str, str]:
+def strava_link_start(request: Request, user_id: UserId) -> dict[str, str]:
     if not settings.strava_client_id:
         raise HTTPException(status_code=400, detail="Strava client id is not configured")
     state = seal_json({
         "user_id": user_id,
         "provider": "strava",
         "issued_at": int(time.time()),
+        "return_origin": _safe_return_origin(request.headers.get("origin") or request.headers.get("referer")),
     })
     return {"authorization_url": strava.authorization_url(state)}
 
@@ -87,6 +90,7 @@ def strava_oauth_callback(
     state: str | None = None,
     code: str | None = None,
     error: str | None = None,
+    scope: str | None = None,
 ) -> RedirectResponse:
     if error:
         return _frontend_redirect("strava", "error", f"Strava authorization failed: {error}")
@@ -116,21 +120,49 @@ def strava_oauth_callback(
 
     try:
         token_payload = strava.exchange_code(code)
-    except Exception:
-        return _frontend_redirect("strava", "error", "Unable to exchange Strava authorization code.")
+    except Exception as exc:
+        response = getattr(exc, "response", None)
+        body = getattr(response, "text", "") if response is not None else ""
+        logger.warning("Strava code exchange failed for user %s: %s %s", user_id, exc, body[:500])
+        return _frontend_redirect(
+            "strava",
+            "error",
+            "Unable to exchange Strava authorization code.",
+            data.get("return_origin"),
+        )
 
     if not isinstance(token_payload, dict):
-        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+        logger.warning("Strava token response was not a JSON object for user %s", user_id)
+        return _frontend_redirect(
+            "strava", "error", "Incomplete token response from Strava.", data.get("return_origin")
+        )
+
+    if scope and not token_payload.get("scope"):
+        token_payload["scope"] = scope
 
     if not strava.has_required_scopes(token_payload):
+        logger.warning(
+            "Strava token response for user %s did not include required scopes. scopes=%s",
+            user_id,
+            strava.accepted_scopes(token_payload),
+        )
         return _frontend_redirect(
             "strava",
             "error",
             "RideSense needs Strava activity read access to import cycling history.",
+            data.get("return_origin"),
         )
 
     if not token_payload.get("access_token") or not token_payload.get("refresh_token"):
-        return _frontend_redirect("strava", "error", "Incomplete token response from Strava.")
+        logger.warning(
+            "Strava token response for user %s missing token fields. has_access=%s has_refresh=%s",
+            user_id,
+            bool(token_payload.get("access_token")),
+            bool(token_payload.get("refresh_token")),
+        )
+        return _frontend_redirect(
+            "strava", "error", "Incomplete token response from Strava.", data.get("return_origin")
+        )
 
     athlete = token_payload.get("athlete") or {}
     scopes = ",".join(sorted(strava.accepted_scopes(token_payload)))
@@ -145,13 +177,99 @@ def strava_oauth_callback(
         )
     except Exception:
         logger.exception("Failed to persist Strava connection")
-        return _frontend_redirect("strava", "error", "Unable to save Strava connection.")
-    return _frontend_redirect("strava", "connected", "Strava connected.")
+        return _frontend_redirect(
+            "strava", "error", "Unable to save Strava connection.", data.get("return_origin")
+        )
+    return _frontend_redirect("strava", "connected", "Strava connected.", data.get("return_origin"))
 
 
-def _frontend_redirect(provider: str, status: str, message: str) -> RedirectResponse:
+def _safe_return_origin(value: str | None) -> str | None:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    if origin == settings.frontend_origin:
+        return origin
+    if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"} and parsed.port:
+        return origin
+    return None
+
+
+def _frontend_redirect(
+    provider: str,
+    status: str,
+    message: str,
+    return_origin: str | None = None,
+) -> RedirectResponse:
     query = urlencode({"provider": provider, "status": status, "message": message})
-    return RedirectResponse(f"{settings.frontend_origin}/?{query}")
+    origin = _safe_return_origin(return_origin) or settings.frontend_origin
+    return RedirectResponse(f"{origin}/?{query}")
+
+
+def _utc_day_start(value: date) -> str:
+    return datetime.combine(value, datetime_time.min, tzinfo=timezone.utc).isoformat()
+
+
+def _utc_day_end(value: date) -> str:
+    return datetime.combine(value, datetime_time.max, tzinfo=timezone.utc).isoformat()
+
+
+def _range_options(
+    weeks: int | None,
+    all_time: bool,
+    start_date: date | None,
+    end_date: date | None,
+) -> dict:
+    if all_time:
+        return {
+            "mode": "all",
+            "label": "All time",
+            "weeks": None,
+            "start_at": None,
+            "end_at": None,
+            "meta": {
+                "mode": "all",
+                "label": "All time",
+                "start_date": None,
+                "end_date": None,
+            },
+        }
+
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise HTTPException(status_code=422, detail="start_date and end_date must be provided together")
+        if start_date > end_date:
+            raise HTTPException(status_code=422, detail="start_date must be on or before end_date")
+        return {
+            "mode": "custom",
+            "label": f"{start_date.isoformat()} to {end_date.isoformat()}",
+            "weeks": None,
+            "start_at": _utc_day_start(start_date),
+            "end_at": _utc_day_end(end_date),
+            "meta": {
+                "mode": "custom",
+                "label": f"{start_date.isoformat()} to {end_date.isoformat()}",
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        }
+
+    selected_weeks = weeks or 12
+    return {
+        "mode": "preset",
+        "label": f"Last {selected_weeks} weeks",
+        "weeks": selected_weeks,
+        "start_at": None,
+        "end_at": None,
+        "meta": {
+            "mode": "preset",
+            "label": f"Last {selected_weeks} weeks",
+            "start_date": None,
+            "end_date": None,
+        },
+    }
 
 
 @app.post("/trainerroad/link/start")
@@ -196,11 +314,18 @@ async def upload_activity(user_id: UserId, file: UploadFile = File(...)) -> dict
 def create_sync_run(request: SyncRequest, user_id: UserId) -> dict:
     run_id = repository.create_sync_run(user_id, request.provider)
     try:
+        connections = {row["provider"] for row in repository.list_connections(user_id)}
         counts = sync_provider(user_id, request.provider)
+        missing = []
+        if request.provider in {"strava", "all"} and "strava" not in connections:
+            missing.append("Strava is not linked")
+        if request.provider in {"trainerroad", "all"} and "trainerroad" not in connections:
+            missing.append("TrainerRoad is not linked")
+        suffix = f" ({'; '.join(missing)})." if missing else "."
         repository.update_sync_run(
             run_id,
             "completed",
-            f"Imported {counts['strava']} Strava and {counts['trainerroad']} TrainerRoad activities.",
+            f"Imported {counts['strava']} Strava and {counts['trainerroad']} TrainerRoad activities{suffix}",
         )
     except Exception as exc:
         repository.update_sync_run(run_id, "failed", str(exc))
@@ -235,14 +360,55 @@ def activities(
     user_id: UserId,
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    weeks: int | None = Query(12, ge=2, le=104),
+    all_time: bool = Query(False),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
 ) -> dict:
-    return {"activities": repository.list_canonical_activities(user_id, limit=limit, offset=offset)}
+    selected_range = _range_options(weeks, all_time, start_date, end_date)
+    if selected_range["weeks"] is not None:
+        # Keep preset activity lists aligned with the analytics window.
+        start_at = (
+            datetime.now(timezone.utc) - timedelta(weeks=selected_range["weeks"])
+        ).isoformat()
+        end_at = None
+    else:
+        start_at = selected_range["start_at"]
+        end_at = selected_range["end_at"]
+    return {
+        "activities": repository.list_canonical_activities(
+            user_id,
+            limit=limit,
+            offset=offset,
+            start_at=start_at,
+            end_at=end_at,
+        ),
+        "total_activities": repository.count_canonical_activities(user_id),
+    }
 
 
 @app.get("/dashboard")
-def dashboard(user_id: UserId, weeks: int = Query(12, ge=2, le=52)) -> dict:
-    activities = repository.list_canonical_activities(user_id, limit=5000)
-    analysis = analyze_activities(activities, weeks=weeks)
+def dashboard(
+    user_id: UserId,
+    weeks: int | None = Query(12, ge=2, le=104),
+    all_time: bool = Query(False),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+) -> dict:
+    selected_range = _range_options(weeks, all_time, start_date, end_date)
+    total_activities = repository.count_canonical_activities(user_id)
+    activities = repository.list_canonical_activities(
+        user_id,
+        limit=None,
+        start_at=selected_range["start_at"],
+        end_at=selected_range["end_at"],
+    )
+    analysis = analyze_activities(
+        activities,
+        weeks=selected_range["weeks"],
+        total_activities=total_activities,
+        range_meta=selected_range["meta"],
+    )
     insights = generate_insights(analysis)
     return {
         "analysis": analysis,
@@ -253,15 +419,50 @@ def dashboard(user_id: UserId, weeks: int = Query(12, ge=2, le=52)) -> dict:
 
 
 @app.get("/insights")
-def insights(user_id: UserId, weeks: int = Query(12, ge=2, le=52)) -> dict:
-    analysis = analyze_activities(repository.list_canonical_activities(user_id, 5000), weeks=weeks)
+def insights(
+    user_id: UserId,
+    weeks: int | None = Query(12, ge=2, le=104),
+    all_time: bool = Query(False),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+) -> dict:
+    selected_range = _range_options(weeks, all_time, start_date, end_date)
+    analysis = analyze_activities(
+        repository.list_canonical_activities(
+            user_id,
+            limit=None,
+            start_at=selected_range["start_at"],
+            end_at=selected_range["end_at"],
+        ),
+        weeks=selected_range["weeks"],
+        total_activities=repository.count_canonical_activities(user_id),
+        range_meta=selected_range["meta"],
+    )
     return {"insights": generate_insights(analysis), "analysis": analysis}
 
 
 @app.post("/questions")
-def questions(request: QuestionRequest, user_id: UserId, weeks: int = Query(12, ge=2, le=52)) -> dict:
+def questions(
+    request: QuestionRequest,
+    user_id: UserId,
+    weeks: int | None = Query(12, ge=2, le=104),
+    all_time: bool = Query(False),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+) -> dict:
+    selected_range = _range_options(weeks, all_time, start_date, end_date)
     profile = repository.get_profile(user_id).model_dump()
-    analysis = analyze_activities(repository.list_canonical_activities(user_id, 5000), weeks=weeks)
+    analysis = analyze_activities(
+        repository.list_canonical_activities(
+            user_id,
+            limit=None,
+            start_at=selected_range["start_at"],
+            end_at=selected_range["end_at"],
+        ),
+        weeks=selected_range["weeks"],
+        total_activities=repository.count_canonical_activities(user_id),
+        range_meta=selected_range["meta"],
+    )
     insight_rows = generate_insights(analysis)
     answer = answer_question(request.question, profile, analysis, insight_rows)
     payload = answer.model_dump()

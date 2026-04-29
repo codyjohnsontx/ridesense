@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Activity, api, AthleteProfile, ConfigStatus, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import {
+  Activity,
+  api,
+  AthleteProfile,
+  ConfigStatus,
+  DashboardResponse,
+  DEFAULT_TIME_RANGE,
+  GroundedAnswer,
+  TimeRange
+} from "@/lib/api";
 import { AuthSession, supabase, supabaseConfigured } from "@/lib/supabase";
 import { AuthGate } from "./AuthGate";
 import { Dashboard, formatLastSync } from "./Dashboard";
@@ -17,15 +26,6 @@ const emptyProfile: AthleteProfile = {
   training_days: ""
 };
 
-type Range = "4w" | "12w" | "6mo" | "1y";
-
-const WEEKS_FOR_RANGE: Record<Range, number> = {
-  "4w": 4,
-  "12w": 12,
-  "6mo": 26,
-  "1y": 52
-};
-
 function pickLastSync(d: DashboardResponse | null) {
   if (!d) return null;
   const stamps = d.connections
@@ -33,6 +33,15 @@ function pickLastSync(d: DashboardResponse | null) {
     .filter((s): s is string => Boolean(s));
   if (stamps.length === 0) return null;
   return stamps.reduce((a, b) => (a > b ? a : b));
+}
+
+function rangeDaysFor(range: TimeRange, activities: Activity[]) {
+  if (range.mode !== "all") return range.days;
+  if (activities.length === 0) return 84;
+  const times = activities.map((a) => new Date(a.started_at).getTime()).filter(Number.isFinite);
+  if (times.length === 0) return 84;
+  const span = Math.floor((Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000)) + 1;
+  return Math.max(1, span);
 }
 
 export function DashboardClient() {
@@ -43,7 +52,7 @@ export function DashboardClient() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [active, setActive] = useState<ScreenId>("dashboard");
-  const [range, setRange] = useState<Range>("12w");
+  const [timeRange, setTimeRange] = useState<TimeRange>(DEFAULT_TIME_RANGE);
   const [question, setQuestion] = useState("Am I trending toward better endurance fitness?");
   const [answer, setAnswer] = useState<GroundedAnswer | null>(null);
   const [asking, setAsking] = useState(false);
@@ -57,12 +66,12 @@ export function DashboardClient() {
   const loadVersion = useRef(0);
   const staticLoadVersion = useRef(0);
 
-  const loadDashboard = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range]) => {
+  const loadDashboard = (overrideToken?: string, selectedRange: TimeRange = timeRange) => {
     const token = overrideToken ?? accessToken;
     const thisVersion = ++loadVersion.current;
     startLoad(async () => {
       try {
-        const dashboardData = await api.dashboard(weeks, token);
+        const dashboardData = await api.dashboard(selectedRange, token);
         if (loadVersion.current !== thisVersion) return;
         setDashboard(dashboardData);
       } catch (err) {
@@ -72,12 +81,12 @@ export function DashboardClient() {
     });
   };
 
-  const loadStaticData = (overrideToken?: string) => {
+  const loadStaticData = (overrideToken?: string, selectedRange: TimeRange = timeRange) => {
     const token = overrideToken ?? accessToken;
     const thisVersion = ++staticLoadVersion.current;
     startLoad(async () => {
       try {
-        const [profileData, activitiesData] = await Promise.all([api.profile(token), api.activities(token)]);
+        const [profileData, activitiesData] = await Promise.all([api.profile(token), api.activities(selectedRange, token)]);
         let configData: ConfigStatus | null = null;
         try {
           configData = await api.configStatus(token);
@@ -95,10 +104,10 @@ export function DashboardClient() {
     });
   };
 
-  const load = (overrideToken?: string, weeks: number = WEEKS_FOR_RANGE[range], includeStatic = true) => {
-    loadDashboard(overrideToken, weeks);
+  const load = (overrideToken?: string, selectedRange: TimeRange = timeRange, includeStatic = true) => {
+    loadDashboard(overrideToken, selectedRange);
     if (includeStatic) {
-      loadStaticData(overrideToken);
+      loadStaticData(overrideToken, selectedRange);
     }
   };
 
@@ -148,9 +157,9 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!dashboard) return;
-    loadDashboard();
+    load(accessToken, timeRange, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range]);
+  }, [timeRange]);
 
   async function submitAuth(mode: "sign-in" | "sign-up", email: string, password: string) {
     if (!supabase) return;
@@ -186,7 +195,7 @@ export function DashboardClient() {
     try {
       const run = await api.startSync("all", accessToken);
       setMessage(run.message || `Sync ${run.status}`);
-      load(accessToken, WEEKS_FOR_RANGE[range], true);
+      load(accessToken, timeRange, true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Sync failed.");
     } finally {
@@ -200,7 +209,7 @@ export function DashboardClient() {
     try {
       const result = await api.uploadActivity(file, accessToken);
       setMessage(`Imported ${result.name} (${Math.round(result.duration_seconds / 60)} min).`);
-      load(accessToken, WEEKS_FOR_RANGE[range], true);
+      load(accessToken, timeRange, true);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -212,7 +221,7 @@ export function DashboardClient() {
     if (!question.trim()) return;
     setAsking(true);
     try {
-      const response = await api.ask(question, WEEKS_FOR_RANGE[range], accessToken);
+      const response = await api.ask(question, timeRange, accessToken);
       setAnswer(response);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Ask failed.");
@@ -247,7 +256,7 @@ export function DashboardClient() {
     link.download = "ridesense-activities.csv";
     link.click();
     URL.revokeObjectURL(url);
-    setMessage(`Exported ${activities.length} activities.`);
+    setMessage(`Exported ${activities.length} activities for ${timeRange.label}.`);
   }
 
   async function saveProfile() {
@@ -282,6 +291,7 @@ export function DashboardClient() {
   }
 
   const lastSync = useMemo(() => formatLastSync(pickLastSync(dashboard)), [dashboard]);
+  const rangeDays = useMemo(() => rangeDaysFor(timeRange, activities), [timeRange, activities]);
   const syncStatus: "ok" | "stale" | "error" = useMemo(() => {
     if (!dashboard) return "ok";
     if (dashboard.connections.length === 0) return "stale";
@@ -322,9 +332,9 @@ export function DashboardClient() {
       ) : active === "dashboard" ? (
         <Dashboard
           dashboard={dashboard}
-          range={range}
-          rangeDays={WEEKS_FOR_RANGE[range] * 7}
-          onRangeChange={setRange}
+          timeRange={timeRange}
+          rangeDays={rangeDays}
+          onRangeChange={setTimeRange}
           onSync={syncAll}
           syncing={syncing}
           question={question}
@@ -338,7 +348,12 @@ export function DashboardClient() {
           onClearMessage={() => setMessage("")}
         />
       ) : active === "rides" ? (
-        <ActivitiesScreen activities={activities} />
+        <ActivitiesScreen
+          activities={activities}
+          totalActivities={dashboard.analysis.meta.total_activities}
+          timeRange={timeRange}
+          onRangeChange={setTimeRange}
+        />
       ) : active === "ask" ? (
         <AskScreen
           question={question}
@@ -346,6 +361,8 @@ export function DashboardClient() {
           onAsk={ask}
           asking={asking}
           answer={answer}
+          timeRange={timeRange}
+          onRangeChange={setTimeRange}
         />
       ) : active === "connections" ? (
         <ConnectionsScreen

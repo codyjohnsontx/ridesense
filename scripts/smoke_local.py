@@ -203,8 +203,8 @@ def main() -> int:
                 expect(page.get_by_text("Form / fitness curve")).to_be_visible()
                 expect(page.get_by_text("Window load")).to_be_visible()
 
-                page.get_by_role("tab", name="4w").click()
-                expect(page.get_by_text("Last 4w")).to_be_visible()
+                page.get_by_role("tab", name="1m").click()
+                expect(page.get_by_text("Last month")).to_be_visible()
 
                 nav = page.get_by_role("navigation")
 
