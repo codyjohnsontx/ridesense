@@ -27,7 +27,7 @@ _REQUIRED_REFRESH_FIELDS = ("access_token", "refresh_token", "expires_at")
 
 
 def _is_non_empty_string(value: object) -> bool:
-    return isinstance(value, str) and bool(value)
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _string_is_int(value: str) -> bool:
@@ -64,7 +64,12 @@ def _refresh_payload_is_valid(payload: object) -> bool:
         return False
     if not _is_non_empty_string(payload["refresh_token"]):
         return False
-    if not _is_numeric_timestamp(payload["expires_at"]):
+    expires_at = payload["expires_at"]
+    if not _is_numeric_timestamp(expires_at):
+        return False
+    # Reject zero/negative epochs — a zero would force an immediate
+    # refresh on the next sync (loop), and negatives are nonsensical.
+    if int(expires_at) <= 0:
         return False
     return True
 

@@ -121,6 +121,10 @@ def test_sync_strava_marks_connection_error_when_refresh_payload_incomplete(
         pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": 1.5}, id="fractional-float-expiry"),
         pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": float("inf")}, id="inf-expiry"),
         pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": float("nan")}, id="nan-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": 0}, id="zero-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": -1}, id="negative-expiry"),
+        pytest.param({"access_token": "   ", "refresh_token": "r", "expires_at": 1}, id="whitespace-access-token"),
+        pytest.param({"access_token": "a", "refresh_token": "\t\n", "expires_at": 1}, id="whitespace-refresh-token"),
     ],
 )
 def test_refresh_payload_validation_rejects_malformed(
