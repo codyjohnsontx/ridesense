@@ -176,7 +176,11 @@ def test_sync_strava_paginates_and_filters_non_cycling(
         return (pages.get(page, []), {})
 
     monkeypatch.setattr(sync_module.strava, "list_activities", fake_list)
-    upserts: list[str] = []
+    # Annotated as list[object] rather than list[str]: ActivityIn pins
+    # provider_activity_id to str today, but the assertion below normalizes
+    # via int(x) so this test is intentionally permissive about the runtime
+    # element type. Keeping the annotation honest about that intent.
+    upserts: list[object] = []
     monkeypatch.setattr(
         sync_module.repository,
         "upsert_provider_activity",

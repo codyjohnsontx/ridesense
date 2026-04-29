@@ -29,6 +29,14 @@ def _is_non_empty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value)
 
 
+def _string_is_int(value: str) -> bool:
+    try:
+        int(value)
+    except ValueError:
+        return False
+    return True
+
+
 def _is_numeric_timestamp(value: object) -> bool:
     """expires_at must convert cleanly to int. Accept int, float, or a
     numeric string. Reject bool explicitly (isinstance(True, int) is True
@@ -38,11 +46,7 @@ def _is_numeric_timestamp(value: object) -> bool:
     if isinstance(value, (int, float)):
         return True
     if isinstance(value, str):
-        try:
-            int(value)
-        except ValueError:
-            return False
-        return True
+        return _string_is_int(value)
     return False
 
 
