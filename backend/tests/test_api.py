@@ -1,12 +1,14 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from app import db, repository
-from app.main import app
+from app.main import _utc_day_end, app
 from app.schemas import ActivityIn, AthleteProfile
+from app.services.analytics import analyze_activities
+from app.services.normalization import iso_utc
 from app.services.merge import rebuild_canonical_activities
 
 
@@ -52,6 +54,23 @@ def _seed_activity(user_id="demo-user"):
     rebuild_canonical_activities(user_id)
 
 
+def _seed_old_activity(started_at: str, user_id="demo-user"):
+    repository.upsert_provider_activity(
+        user_id,
+        ActivityIn(
+            provider="strava",
+            provider_activity_id="st-api-old",
+            name="Old Base Ride",
+            sport_type="Ride",
+            started_at=started_at,
+            duration_seconds=3600,
+            estimated_load=40,
+            workout_category="Endurance",
+        ),
+    )
+    rebuild_canonical_activities(user_id)
+
+
 def test_dashboard_and_activities_return_seeded_data(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     _seed_activity()
@@ -74,6 +93,100 @@ def test_activities_support_offset_pagination(tmp_path, monkeypatch):
 
     assert [a["name"] for a in first_page["activities"]] == ["API Threshold"]
     assert [a["name"] for a in second_page["activities"]] == ["API Endurance"]
+
+
+def test_repository_range_filters_include_utc_day_end_with_z_and_isoformat_timestamps(tmp_path, monkeypatch):
+    _client(tmp_path, monkeypatch)
+    end_at = _utc_day_end(date(2025, 1, 2))
+    isoformat_timestamp = datetime(2025, 1, 2, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+
+    with db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO canonical_activities (
+                user_id, name, sport_type, started_at, duration_seconds, source_priority
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("demo-user", "Z boundary ride", "Ride", "2025-01-02T23:59:59Z", 1800, "strava"),
+                ("demo-user", "Isoformat boundary ride", "Ride", isoformat_timestamp, 1800, "upload"),
+            ],
+        )
+
+    activities = repository.list_canonical_activities("demo-user", start_at=None, end_at=end_at)
+    analysis = analyze_activities(
+        activities,
+        start_at=iso_utc("2025-01-02T00:00:00Z"),
+        end_at=end_at,
+    )
+
+    assert {a["name"] for a in activities} == {"Z boundary ride", "Isoformat boundary ride"}
+    assert repository.count_canonical_activities("demo-user", start_at=None, end_at=end_at) == 2
+    assert analysis["meta"]["recent_activities"] == 2
+
+
+def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    old_started_at = (datetime.now(timezone.utc) - timedelta(days=370)).isoformat()
+    _seed_activity()
+    _seed_old_activity(old_started_at)
+
+    dashboard = client.get("/dashboard?weeks=12").json()
+    activities = client.get("/activities?weeks=12").json()
+
+    assert dashboard["analysis"]["meta"]["total_activities"] == 3
+    assert dashboard["analysis"]["meta"]["recent_activities"] == 2
+    assert dashboard["analysis"]["meta"]["range"]["mode"] == "preset"
+    assert dashboard["analysis"]["meta"]["range"]["start_date"] is not None
+    assert dashboard["analysis"]["meta"]["range"]["end_date"] is not None
+    assert "T" not in dashboard["analysis"]["meta"]["range"]["start_date"]
+    assert "T" not in dashboard["analysis"]["meta"]["range"]["end_date"]
+    assert dashboard["analysis"]["summary"]["total_recent_load"] == 165
+    assert [a["name"] for a in activities["activities"]] == ["API Threshold", "API Endurance"]
+    assert activities["total_activities"] == 2
+
+
+def test_dashboard_and_activities_support_all_time_range(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    old_started_at = (datetime.now(timezone.utc) - timedelta(days=370)).isoformat()
+    _seed_activity()
+    _seed_old_activity(old_started_at)
+
+    dashboard = client.get("/dashboard?all_time=true").json()
+    activities = client.get("/activities?all_time=true").json()
+
+    assert dashboard["analysis"]["meta"]["range"]["mode"] == "all"
+    assert dashboard["analysis"]["meta"]["weeks"] is None
+    assert dashboard["analysis"]["meta"]["recent_activities"] == 3
+    assert dashboard["analysis"]["summary"]["total_recent_load"] == 205
+    assert activities["total_activities"] == 3
+    assert {a["name"] for a in activities["activities"]} == {
+        "API Threshold",
+        "API Endurance",
+        "Old Base Ride",
+    }
+
+
+def test_custom_date_range_is_inclusive_and_validated(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    old_started_at = datetime.now(timezone.utc) - timedelta(days=370)
+    old_day = old_started_at.date().isoformat()
+    _seed_activity()
+    _seed_old_activity(old_started_at.isoformat())
+
+    dashboard = client.get(f"/dashboard?start_date={old_day}&end_date={old_day}").json()
+    activities = client.get(f"/activities?start_date={old_day}&end_date={old_day}").json()
+
+    assert dashboard["analysis"]["meta"]["range"]["mode"] == "custom"
+    assert dashboard["analysis"]["meta"]["range"]["start_date"] == old_day
+    assert dashboard["analysis"]["summary"]["total_recent_load"] == 40
+    assert [a["name"] for a in activities["activities"]] == ["Old Base Ride"]
+
+    missing_pair = client.get(f"/dashboard?start_date={old_day}")
+    reversed_pair = client.get("/dashboard?start_date=2026-02-01&end_date=2026-01-01")
+    assert missing_pair.status_code == 422
+    assert reversed_pair.status_code == 422
 
 
 def test_profile_save_load_round_trip(tmp_path, monkeypatch):
@@ -117,9 +230,48 @@ def test_question_uses_requested_weeks(tmp_path, monkeypatch):
     assert captured == {"question": "How is load trending?", "weeks": 4}
 
 
+def test_question_uses_custom_range(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    old_started_at = datetime.now(timezone.utc) - timedelta(days=370)
+    old_day = old_started_at.date().isoformat()
+    _seed_activity()
+    _seed_old_activity(old_started_at.isoformat())
+    captured = {}
+
+    def fake_answer(question, profile, analysis, insights):
+        captured["question"] = question
+        captured["range"] = analysis["meta"]["range"]
+        captured["activity_count"] = analysis["meta"]["recent_activities"]
+        return SimpleNamespace(
+            model_dump=lambda: {
+                "answer": "Custom range answer.",
+                "evidence": [{"metric_id": "meta.range", "label": "Range", "value": analysis["meta"]["range"]["label"]}],
+                "confidence": "low",
+                "caveats": [],
+                "follow_up_questions": [],
+            }
+        )
+
+    monkeypatch.setattr("app.main.answer_question", fake_answer)
+
+    response = client.post(
+        f"/questions?start_date={old_day}&end_date={old_day}",
+        json={"question": "How did that block look?"},
+    )
+
+    assert response.status_code == 200
+    assert captured["question"] == "How did that block look?"
+    assert captured["range"]["mode"] == "custom"
+    assert captured["activity_count"] == 1
+
+
 def test_sync_run_completed_status_with_mocked_provider(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     monkeypatch.setattr("app.main.sync_provider", lambda user_id, provider: {"strava": 2, "trainerroad": 3})
+    monkeypatch.setattr(
+        "app.main.repository.list_connections",
+        lambda user_id: [{"provider": "strava"}, {"provider": "trainerroad"}],
+    )
 
     response = client.post("/sync-runs", json={"provider": "all"})
 
@@ -127,6 +279,18 @@ def test_sync_run_completed_status_with_mocked_provider(tmp_path, monkeypatch):
     body = response.json()
     assert body["status"] == "completed"
     assert body["message"] == "Imported 2 Strava and 3 TrainerRoad activities."
+
+
+def test_sync_run_message_mentions_unlinked_provider(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr("app.main.sync_provider", lambda user_id, provider: {"strava": 0, "trainerroad": 0})
+
+    response = client.post("/sync-runs", json={"provider": "all"})
+
+    assert response.status_code == 200
+    assert response.json()["message"] == (
+        "Imported 0 Strava and 0 TrainerRoad activities (Strava is not linked; TrainerRoad is not linked)."
+    )
 
 
 def test_upload_activity_imports_and_dedupes(tmp_path, monkeypatch):
@@ -225,3 +389,18 @@ def test_config_status_returns_boolean_flags(tmp_path, monkeypatch):
         "openai_configured": True,
         "dev_auth_enabled": True,
     }
+
+
+def test_dev_cors_allows_localhost_dev_ports(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.options(
+        "/dashboard?weeks=12",
+        headers={
+            "Origin": "http://127.0.0.1:3002",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3002"

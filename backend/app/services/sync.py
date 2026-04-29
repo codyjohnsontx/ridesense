@@ -24,6 +24,7 @@ class StravaTokenRefreshError(RuntimeError):
 
 
 _REQUIRED_REFRESH_FIELDS = ("access_token", "refresh_token", "expires_at")
+STRAVA_PAGE_SIZE = 200
 
 
 def _is_non_empty_string(value: object) -> bool:
@@ -117,7 +118,9 @@ def sync_strava(user_id: str) -> int:
     count = 0
     page = 1
     while True:
-        activities, _headers = strava.list_activities(secret["access_token"], page=page)
+        activities, _headers = strava.list_activities(
+            secret["access_token"], page=page, per_page=STRAVA_PAGE_SIZE
+        )
         if not activities:
             break
         for raw in activities:
@@ -125,7 +128,7 @@ def sync_strava(user_id: str) -> int:
             if normalized:
                 repository.upsert_provider_activity(user_id, normalized)
                 count += 1
-        if len(activities) < 100:
+        if len(activities) < STRAVA_PAGE_SIZE:
             break
         page += 1
 

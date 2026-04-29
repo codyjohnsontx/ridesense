@@ -1,12 +1,25 @@
 "use client";
 
-import type { Activity, AthleteProfile, ConfigStatus, DashboardResponse, GroundedAnswer } from "@/lib/api";
+import type { Activity, AthleteProfile, ConfigStatus, DashboardResponse, GroundedAnswer, TimeRange } from "@/lib/api";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
+import { TimeRangeControl } from "./TimeRangeControl";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Textarea } from "./ui";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+}
+
+function formatActivitySpan(activities: Activity[], totalActivities: number, timeRange: TimeRange) {
+  if (activities.length === 0) {
+    return `${timeRange.label} · no matching activities · ${totalActivities} imported total`;
+  }
+  const sorted = [...activities].sort(
+    (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+  );
+  const oldest = sorted[0];
+  const newest = sorted[sorted.length - 1];
+  return `${timeRange.label} · ${activities.length} visible of ${totalActivities} imported · ${formatDate(oldest.started_at)} to ${formatDate(newest.started_at)}`;
 }
 
 function formatDuration(seconds: number) {
@@ -15,10 +28,25 @@ function formatDuration(seconds: number) {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-export function ActivitiesScreen({ activities }: { activities: Activity[] }) {
+export function ActivitiesScreen({
+  activities,
+  totalActivities,
+  timeRange,
+  onRangeChange
+}: {
+  activities: Activity[];
+  totalActivities: number;
+  timeRange: TimeRange;
+  onRangeChange: (next: TimeRange) => void;
+}) {
   return (
     <>
-      <PageHeader eyebrow="Merged feed" title="Activities" subtitle="TrainerRoad and Strava on a single timeline." />
+      <PageHeader
+        eyebrow="Merged feed"
+        title="Activities"
+        subtitle={formatActivitySpan(activities, totalActivities, timeRange)}
+        right={<TimeRangeControl range={timeRange} onChange={onRangeChange} />}
+      />
       <div className="px-8 py-5">
         <Card>
           <CardContent className="px-0 pt-2">
@@ -401,17 +429,26 @@ export function AskScreen({
   onChange,
   onAsk,
   asking,
-  answer
+  answer,
+  timeRange,
+  onRangeChange
 }: {
   question: string;
   onChange: (q: string) => void;
   onAsk: () => void;
   asking: boolean;
   answer: GroundedAnswer | null;
+  timeRange: TimeRange;
+  onRangeChange: (next: TimeRange) => void;
 }) {
   return (
     <>
-      <PageHeader eyebrow="Grounded" title="Ask" subtitle="Conversational queries that cite every metric." />
+      <PageHeader
+        eyebrow="Grounded"
+        title="Ask"
+        subtitle={`Answers use ${timeRange.label}.`}
+        right={<TimeRangeControl range={timeRange} onChange={onRangeChange} />}
+      />
       <div className="grid grid-cols-1 gap-4 px-8 py-5">
         <Card>
           <CardHeader>

@@ -19,14 +19,69 @@ def load_value(activity: dict[str, Any]) -> float:
     return 0.0
 
 
-def analyze_activities(activities: list[dict[str, Any]], weeks: int = 12) -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(weeks=weeks)
-    recent = [
-        a
-        for a in activities
-        if datetime.fromisoformat(a["started_at"].replace("Z", "+00:00")) >= cutoff
-    ]
+def _date_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+
+
+def _range_meta_fallback(
+    weeks: int | None,
+    start_at: str | None,
+    end_at: str | None,
+) -> dict[str, Any]:
+    start_date = _date_label(start_at)
+    end_date = _date_label(end_at)
+    if start_date is not None or end_date is not None:
+        if start_date and end_date:
+            label = f"{start_date} to {end_date}"
+        elif start_date:
+            label = f"From {start_date}"
+        else:
+            label = f"Through {end_date}"
+        return {
+            "mode": "custom",
+            "label": label,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+    return {
+        "mode": "preset" if weeks is not None else "all",
+        "label": f"Last {weeks} weeks" if weeks is not None else "All time",
+        "start_date": None,
+        "end_date": None,
+    }
+
+
+def analyze_activities(
+    activities: list[dict[str, Any]],
+    weeks: int | None = 12,
+    start_at: str | None = None,
+    end_at: str | None = None,
+    total_activities: int | None = None,
+    range_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if start_at is not None or end_at is not None:
+        start_dt = datetime.fromisoformat(start_at.replace("Z", "+00:00")) if start_at is not None else None
+        end_dt = datetime.fromisoformat(end_at.replace("Z", "+00:00")) if end_at is not None else None
+        recent = []
+        for activity in activities:
+            started_at = datetime.fromisoformat(activity["started_at"].replace("Z", "+00:00"))
+            if start_dt is not None and started_at < start_dt:
+                continue
+            if end_dt is not None and started_at > end_dt:
+                continue
+            recent.append(activity)
+    elif weeks is None:
+        recent = activities
+    else:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(weeks=weeks)
+        recent = [
+            a
+            for a in activities
+            if datetime.fromisoformat(a["started_at"].replace("Z", "+00:00")) >= cutoff
+        ]
 
     weekly: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"week_start": "", "load": 0.0, "count": 0, "duration_hours": 0.0}
@@ -62,9 +117,10 @@ def analyze_activities(activities: list[dict[str, Any]], weeks: int = 12) -> dic
 
     return {
         "meta": {
-            "total_activities": len(activities),
+            "total_activities": total_activities if total_activities is not None else len(activities),
             "recent_activities": len(recent),
             "weeks": weeks,
+            "range": range_meta or _range_meta_fallback(weeks, start_at, end_at),
         },
         "summary": {
             "latest_week_load": round(latest, 1),
