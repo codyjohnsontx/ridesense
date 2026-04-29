@@ -224,11 +224,27 @@ def list_provider_activities(user_id: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def count_canonical_activities(user_id: str) -> int:
+def count_canonical_activities(
+    user_id: str,
+    start_at: str | None = None,
+    end_at: str | None = None,
+) -> int:
+    clauses = ["user_id = ?"]
+    params: list[Any] = [user_id]
+    if start_at is not None:
+        clauses.append("started_at >= ?")
+        params.append(start_at)
+    if end_at is not None:
+        clauses.append("started_at <= ?")
+        params.append(end_at)
+
     with connect() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS count FROM canonical_activities WHERE user_id = ?",
-            (user_id,),
+            f"""
+            SELECT COUNT(*) AS count FROM canonical_activities
+            WHERE {" AND ".join(clauses)}
+            """,
+            params,
         ).fetchone()
     return int(row["count"])
 

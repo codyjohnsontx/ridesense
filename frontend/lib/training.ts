@@ -2,8 +2,8 @@ import type { Activity, DashboardResponse } from "./api";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+function utcStartOfDay(d: Date) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
 function loadFor(activity: Pick<Activity, "tss" | "estimated_load">) {
@@ -11,11 +11,11 @@ function loadFor(activity: Pick<Activity, "tss" | "estimated_load">) {
 }
 
 export function buildDailyTss(activities: Activity[], days = 84, endDate: Date = new Date()): number[] {
-  const end = startOfDay(endDate);
+  const end = utcStartOfDay(endDate);
   const start = end.getTime() - (days - 1) * DAY_MS;
   const arr = new Array(days).fill(0) as number[];
   for (const a of activities) {
-    const d = startOfDay(new Date(a.started_at)).getTime();
+    const d = utcStartOfDay(new Date(a.started_at)).getTime();
     if (d < start || d > end.getTime()) continue;
     const idx = Math.round((d - start) / DAY_MS);
     if (idx >= 0 && idx < days) {

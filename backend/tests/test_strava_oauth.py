@@ -10,8 +10,19 @@ from app.providers import strava
 from app.security import open_json, seal_json
 
 
-def _fresh_state(user_id: str = "user-1", provider: str = "strava") -> str:
-    return seal_json({"user_id": user_id, "provider": provider, "issued_at": int(time.time())})
+def _fresh_state(
+    user_id: str = "user-1",
+    provider: str = "strava",
+    return_origin: str | None = None,
+) -> str:
+    return seal_json(
+        {
+            "user_id": user_id,
+            "provider": provider,
+            "issued_at": int(time.time()),
+            "return_origin": return_origin,
+        }
+    )
 
 
 def test_strava_authorization_url_forces_scope_reapproval():
@@ -201,6 +212,39 @@ def test_strava_callback_access_denied_redirects_to_state_return_origin():
     assert "status=error" in response.headers["location"]
 
 
+def test_strava_callback_missing_code_redirects_to_state_return_origin():
+    client = TestClient(app)
+    response = client.get(
+        "/strava/oauth/callback",
+        params={"state": _fresh_state(return_origin="http://localhost:3002")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"].startswith("http://localhost:3002/?")
+    assert "status=error" in response.headers["location"]
+
+
+def test_strava_callback_invalid_user_redirects_to_state_return_origin(monkeypatch):
+    exchange_code = Mock()
+    monkeypatch.setattr("app.providers.strava.exchange_code", exchange_code)
+
+    client = TestClient(app)
+    response = client.get(
+        "/strava/oauth/callback",
+        params={
+            "code": "good-code",
+            "state": _fresh_state(user_id="", return_origin="http://localhost:3002"),
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"].startswith("http://localhost:3002/?")
+    assert "status=error" in response.headers["location"]
+    exchange_code.assert_not_called()
+
+
 def test_strava_callback_rejects_missing_activity_scope(monkeypatch):
     save_connection = Mock()
 
@@ -363,7 +407,12 @@ def test_strava_callback_rejects_expired_state(monkeypatch):
     monkeypatch.setattr("app.repository.save_connection", save_connection)
 
     stale_state = seal_json(
-        {"user_id": "user-1", "provider": "strava", "issued_at": int(time.time()) - 3600}
+        {
+            "user_id": "user-1",
+            "provider": "strava",
+            "issued_at": int(time.time()) - 3600,
+            "return_origin": "http://localhost:3002",
+        }
     )
 
     client = TestClient(app)
@@ -374,6 +423,7 @@ def test_strava_callback_rejects_expired_state(monkeypatch):
     )
 
     assert response.status_code in {302, 307}
+    assert response.headers["location"].startswith("http://localhost:3002/?")
     assert "status=error" in response.headers["location"]
     assert "expired" in response.headers["location"]
     exchange_code.assert_not_called()

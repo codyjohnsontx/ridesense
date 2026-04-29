@@ -52,8 +52,7 @@ def _seed_activity(user_id="demo-user"):
     rebuild_canonical_activities(user_id)
 
 
-def _seed_old_activity(user_id="demo-user"):
-    old_started_at = (datetime.now(timezone.utc) - timedelta(days=370)).isoformat()
+def _seed_old_activity(started_at: str, user_id="demo-user"):
     repository.upsert_provider_activity(
         user_id,
         ActivityIn(
@@ -61,7 +60,7 @@ def _seed_old_activity(user_id="demo-user"):
             provider_activity_id="st-api-old",
             name="Old Base Ride",
             sport_type="Ride",
-            started_at=old_started_at,
+            started_at=started_at,
             duration_seconds=3600,
             estimated_load=40,
             workout_category="Endurance",
@@ -96,8 +95,9 @@ def test_activities_support_offset_pagination(tmp_path, monkeypatch):
 
 def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
+    old_started_at = (datetime.now(timezone.utc) - timedelta(days=370)).isoformat()
     _seed_activity()
-    _seed_old_activity()
+    _seed_old_activity(old_started_at)
 
     dashboard = client.get("/dashboard?weeks=12").json()
     activities = client.get("/activities?weeks=12").json()
@@ -111,13 +111,14 @@ def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_p
     assert "T" not in dashboard["analysis"]["meta"]["range"]["end_date"]
     assert dashboard["analysis"]["summary"]["total_recent_load"] == 165
     assert [a["name"] for a in activities["activities"]] == ["API Threshold", "API Endurance"]
-    assert activities["total_activities"] == 3
+    assert activities["total_activities"] == 2
 
 
 def test_dashboard_and_activities_support_all_time_range(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
+    old_started_at = (datetime.now(timezone.utc) - timedelta(days=370)).isoformat()
     _seed_activity()
-    _seed_old_activity()
+    _seed_old_activity(old_started_at)
 
     dashboard = client.get("/dashboard?all_time=true").json()
     activities = client.get("/activities?all_time=true").json()
@@ -126,6 +127,7 @@ def test_dashboard_and_activities_support_all_time_range(tmp_path, monkeypatch):
     assert dashboard["analysis"]["meta"]["weeks"] is None
     assert dashboard["analysis"]["meta"]["recent_activities"] == 3
     assert dashboard["analysis"]["summary"]["total_recent_load"] == 205
+    assert activities["total_activities"] == 3
     assert {a["name"] for a in activities["activities"]} == {
         "API Threshold",
         "API Endurance",
@@ -135,9 +137,10 @@ def test_dashboard_and_activities_support_all_time_range(tmp_path, monkeypatch):
 
 def test_custom_date_range_is_inclusive_and_validated(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    old_day = (datetime.now(timezone.utc) - timedelta(days=370)).date().isoformat()
+    old_started_at = datetime.now(timezone.utc) - timedelta(days=370)
+    old_day = old_started_at.date().isoformat()
     _seed_activity()
-    _seed_old_activity()
+    _seed_old_activity(old_started_at.isoformat())
 
     dashboard = client.get(f"/dashboard?start_date={old_day}&end_date={old_day}").json()
     activities = client.get(f"/activities?start_date={old_day}&end_date={old_day}").json()
@@ -196,9 +199,10 @@ def test_question_uses_requested_weeks(tmp_path, monkeypatch):
 
 def test_question_uses_custom_range(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    old_day = (datetime.now(timezone.utc) - timedelta(days=370)).date().isoformat()
+    old_started_at = datetime.now(timezone.utc) - timedelta(days=370)
+    old_day = old_started_at.date().isoformat()
     _seed_activity()
-    _seed_old_activity()
+    _seed_old_activity(old_started_at.isoformat())
     captured = {}
 
     def fake_answer(question, profile, analysis, insights):

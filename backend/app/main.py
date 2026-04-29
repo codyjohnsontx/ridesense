@@ -92,34 +92,36 @@ def strava_oauth_callback(
     error: str | None = None,
     scope: str | None = None,
 ) -> RedirectResponse:
+    return_origin = _callback_return_origin(state)
     if error:
         return _frontend_redirect(
             "strava",
             "error",
             f"Strava authorization failed: {error}",
-            _callback_return_origin(state),
+            return_origin,
         )
 
     if not code:
-        return _frontend_redirect("strava", "error", "Missing Strava authorization code.")
+        return _frontend_redirect("strava", "error", "Missing Strava authorization code.", return_origin)
 
     if not state:
-        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.", return_origin)
 
     try:
         data = open_json(state)
         user_id = data.get("user_id")
         issued_at = data.get("issued_at")
         if data.get("provider") != "strava" or not user_id:
-            return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+            return _frontend_redirect("strava", "error", "Invalid Strava authorization state.", return_origin)
         if not isinstance(issued_at, int) or time.time() - issued_at > OAUTH_STATE_TTL_SECONDS:
             return _frontend_redirect(
                 "strava",
                 "error",
                 "Strava link expired; please start the link flow again.",
+                return_origin,
             )
     except Exception:
-        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
+        return _frontend_redirect("strava", "error", "Invalid Strava authorization state.", return_origin)
 
     try:
         token_payload = strava.exchange_code(code)
@@ -394,7 +396,11 @@ def activities(
             start_at=selected_range["start_at"],
             end_at=selected_range["end_at"],
         ),
-        "total_activities": repository.count_canonical_activities(user_id),
+        "total_activities": repository.count_canonical_activities(
+            user_id,
+            start_at=selected_range["start_at"],
+            end_at=selected_range["end_at"],
+        ),
     }
 
 
