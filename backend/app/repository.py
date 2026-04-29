@@ -88,6 +88,15 @@ def save_connection(
         )
 
 
+def set_connection_status(user_id: str, provider: str, status: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE provider_connections SET status=?, updated_at=CURRENT_TIMESTAMP "
+            "WHERE user_id = ? AND provider = ?",
+            (status, user_id, provider),
+        )
+
+
 def list_connections(user_id: str) -> list[dict[str, Any]]:
     with connect() as conn:
         rows = conn.execute(

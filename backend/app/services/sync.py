@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import math
 import time
 
 from app import repository
@@ -9,6 +11,69 @@ from app.services.merge import rebuild_canonical_activities
 from app.services.normalization import normalize_strava_activity
 
 
+logger = logging.getLogger(__name__)
+
+
+class StravaTokenRefreshError(RuntimeError):
+    """Raised when refresh_access_token fails (revoked, expired, network)
+    or returns a payload missing required fields.
+
+    The connection is marked status='error' before this is raised so the
+    UI can surface the relink prompt without the caller doing extra work.
+    """
+
+
+_REQUIRED_REFRESH_FIELDS = ("access_token", "refresh_token", "expires_at")
+
+
+def _is_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _string_is_int(value: str) -> bool:
+    try:
+        int(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_numeric_timestamp(value: object) -> bool:
+    """expires_at must convert cleanly to int. Accept int, finite
+    whole-number floats, or numeric strings that represent an integer.
+    Reject bool explicitly (isinstance(True, int) is True in Python),
+    and reject non-finite or fractional floats so a later
+    int(expires_at) call cannot raise OverflowError / ValueError."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value) and int(value) == value
+    if isinstance(value, str):
+        return _string_is_int(value)
+    return False
+
+
+def _refresh_payload_is_valid(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if not all(field in payload for field in _REQUIRED_REFRESH_FIELDS):
+        return False
+    if not _is_non_empty_string(payload["access_token"]):
+        return False
+    if not _is_non_empty_string(payload["refresh_token"]):
+        return False
+    expires_at = payload["expires_at"]
+    if not _is_numeric_timestamp(expires_at):
+        return False
+    # Reject zero/negative epochs — a zero would force an immediate
+    # refresh on the next sync (loop), and negatives are nonsensical.
+    if int(expires_at) <= 0:
+        return False
+    return True
+
+
 def sync_strava(user_id: str) -> int:
     connection = repository.get_connection(user_id, "strava")
     if not connection:
@@ -16,14 +81,37 @@ def sync_strava(user_id: str) -> int:
 
     secret = open_json(connection["encrypted_secret"])
     if int(secret.get("expires_at") or 0) <= int(time.time()) + 60:
-        secret = strava.refresh_access_token(secret["refresh_token"])
+        try:
+            refreshed = strava.refresh_access_token(secret["refresh_token"])
+        except Exception as exc:
+            logger.warning("Strava token refresh failed for user %s: %s", user_id, exc)
+            repository.set_connection_status(user_id, "strava", "error")
+            raise StravaTokenRefreshError(
+                "Strava refresh failed; the user must relink the connection."
+            ) from exc
+        if not _refresh_payload_is_valid(refreshed):
+            logger.warning(
+                "Strava refresh response for user %s missing required fields %s",
+                user_id,
+                _REQUIRED_REFRESH_FIELDS,
+            )
+            repository.set_connection_status(user_id, "strava", "error")
+            raise StravaTokenRefreshError(
+                "Strava refresh response was incomplete; the user must relink."
+            )
+        secret = refreshed
+        # Canonicalize expires_at to int before persisting — the DB column is
+        # INTEGER and downstream int(...) checks would otherwise raise on a
+        # raw string or non-int float. _is_numeric_timestamp guarantees this
+        # int() call is safe.
+        secret["expires_at"] = int(secret["expires_at"])
         repository.save_connection(
             user_id=user_id,
             provider="strava",
             encrypted_secret=seal_json(secret),
             external_athlete_id=connection.get("external_athlete_id") or "",
             scopes=connection.get("scopes") or "",
-            expires_at=secret.get("expires_at"),
+            expires_at=secret["expires_at"],
         )
 
     count = 0
