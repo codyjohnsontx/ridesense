@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 
 from app import repository
@@ -38,13 +39,17 @@ def _string_is_int(value: str) -> bool:
 
 
 def _is_numeric_timestamp(value: object) -> bool:
-    """expires_at must convert cleanly to int. Accept int, float, or a
-    numeric string. Reject bool explicitly (isinstance(True, int) is True
-    in Python and would otherwise sneak past the int branch)."""
+    """expires_at must convert cleanly to int. Accept int, finite
+    whole-number floats, or numeric strings that represent an integer.
+    Reject bool explicitly (isinstance(True, int) is True in Python),
+    and reject non-finite or fractional floats so a later
+    int(expires_at) call cannot raise OverflowError / ValueError."""
     if isinstance(value, bool):
         return False
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
         return True
+    if isinstance(value, float):
+        return math.isfinite(value) and int(value) == value
     if isinstance(value, str):
         return _string_is_int(value)
     return False
@@ -90,13 +95,18 @@ def sync_strava(user_id: str) -> int:
                 "Strava refresh response was incomplete; the user must relink."
             )
         secret = refreshed
+        # Canonicalize expires_at to int before persisting — the DB column is
+        # INTEGER and downstream int(...) checks would otherwise raise on a
+        # raw string or non-int float. _is_numeric_timestamp guarantees this
+        # int() call is safe.
+        secret["expires_at"] = int(secret["expires_at"])
         repository.save_connection(
             user_id=user_id,
             provider="strava",
             encrypted_secret=seal_json(secret),
             external_athlete_id=connection.get("external_athlete_id") or "",
             scopes=connection.get("scopes") or "",
-            expires_at=secret.get("expires_at"),
+            expires_at=secret["expires_at"],
         )
 
     count = 0

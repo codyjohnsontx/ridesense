@@ -118,6 +118,9 @@ def test_sync_strava_marks_connection_error_when_refresh_payload_incomplete(
         pytest.param({"access_token": "a", "refresh_token": ["x"], "expires_at": 1}, id="list-refresh"),
         pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": "abc"}, id="non-numeric-expiry"),
         pytest.param({"access_token": "a", "refresh_token": "r"}, id="missing-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": 1.5}, id="fractional-float-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": float("inf")}, id="inf-expiry"),
+        pytest.param({"access_token": "a", "refresh_token": "r", "expires_at": float("nan")}, id="nan-expiry"),
     ],
 )
 def test_refresh_payload_validation_rejects_malformed(
@@ -138,27 +141,46 @@ def test_refresh_payload_validation_rejects_malformed(
     save_call.assert_not_called()
 
 
-def test_refresh_payload_validation_accepts_numeric_string_expiry(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("raw_expiry", "expected"),
+    [
+        pytest.param("9999999999", 9999999999, id="numeric-string"),
+        pytest.param(9999999999.0, 9999999999, id="whole-float"),
+        pytest.param(9999999999, 9999999999, id="int-passthrough"),
+    ],
+)
+def test_refresh_payload_canonicalizes_expiry_to_int(
+    monkeypatch: pytest.MonkeyPatch, raw_expiry: object, expected: int
 ) -> None:
-    """Strava sometimes serializes expires_at as a string in OAuth-y payloads;
-    accept the parseable form so a real-world response doesn't trip the guard."""
+    """Strava sometimes serializes expires_at as a string or float; accept
+    them, and persist the canonical int so the DB never holds a non-int."""
     monkeypatch.setattr(sync_module.repository, "get_connection", lambda *_a, **_k: _connection())
     monkeypatch.setattr(sync_module, "open_json", lambda _t: {"access_token": "old", "refresh_token": "r", "expires_at": 0})
     monkeypatch.setattr(
         sync_module.strava,
         "refresh_access_token",
-        lambda _r: {"access_token": "new", "refresh_token": "r2", "expires_at": "9999999999"},
+        lambda _r: {"access_token": "new", "refresh_token": "r2", "expires_at": raw_expiry},
     )
     save_call = Mock()
     monkeypatch.setattr(sync_module.repository, "save_connection", save_call)
-    monkeypatch.setattr(sync_module, "seal_json", lambda payload: f"sealed:{payload['access_token']}")
+    sealed: dict = {}
+
+    def fake_seal(payload):
+        sealed.update(payload)
+        return "sealed"
+
+    monkeypatch.setattr(sync_module, "seal_json", fake_seal)
     monkeypatch.setattr(sync_module.strava, "list_activities", lambda *_a, **_k: ([], {}))
     monkeypatch.setattr(sync_module, "rebuild_canonical_activities", lambda _u: None)
 
-    sync_strava("demo-user")  # must not raise
+    sync_strava("demo-user")
 
     save_call.assert_called_once()
+    assert save_call.call_args.kwargs["expires_at"] == expected
+    assert isinstance(save_call.call_args.kwargs["expires_at"], int)
+    # The sealed (re-encrypted) secret must also carry the canonical int.
+    assert sealed["expires_at"] == expected
+    assert isinstance(sealed["expires_at"], int)
 
 
 def test_sync_strava_paginates_and_filters_non_cycling(
