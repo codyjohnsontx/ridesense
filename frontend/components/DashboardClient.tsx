@@ -157,6 +157,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!dashboard) return;
+    setAnswer(null);
     load(accessToken, timeRange, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRange]);

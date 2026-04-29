@@ -179,6 +179,28 @@ def test_strava_callback_redirects_to_state_return_origin(monkeypatch):
     assert "status=connected" in response.headers["location"]
 
 
+def test_strava_callback_access_denied_redirects_to_state_return_origin():
+    state = seal_json(
+        {
+            "user_id": "user-1",
+            "provider": "strava",
+            "issued_at": int(time.time()),
+            "return_origin": "http://localhost:3002",
+        }
+    )
+
+    client = TestClient(app)
+    response = client.get(
+        "/strava/oauth/callback",
+        params={"error": "access_denied", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in {302, 307}
+    assert response.headers["location"].startswith("http://localhost:3002/?")
+    assert "status=error" in response.headers["location"]
+
+
 def test_strava_callback_rejects_missing_activity_scope(monkeypatch):
     save_connection = Mock()
 

@@ -16,7 +16,7 @@ from app.config import settings
 from app.db import init_db
 from app.providers import strava, trainerroad
 from app.schemas import AthleteProfile, QuestionRequest, SyncRequest
-from app.security import seal_json
+from app.security import open_json, seal_json
 from app.services.ai import answer_question
 from app.services.analytics import analyze_activities
 from app.services.insights import generate_insights
@@ -93,12 +93,15 @@ def strava_oauth_callback(
     scope: str | None = None,
 ) -> RedirectResponse:
     if error:
-        return _frontend_redirect("strava", "error", f"Strava authorization failed: {error}")
+        return _frontend_redirect(
+            "strava",
+            "error",
+            f"Strava authorization failed: {error}",
+            _callback_return_origin(state),
+        )
 
     if not code:
         return _frontend_redirect("strava", "error", "Missing Strava authorization code.")
-
-    from app.security import open_json
 
     if not state:
         return _frontend_redirect("strava", "error", "Invalid Strava authorization state.")
@@ -197,6 +200,19 @@ def _safe_return_origin(value: str | None) -> str | None:
     return None
 
 
+def _callback_return_origin(state: str | None) -> str | None:
+    if not state:
+        return None
+    try:
+        data = open_json(state)
+    except Exception:
+        return None
+    if data.get("provider") != "strava":
+        return None
+    return_origin = data.get("return_origin")
+    return return_origin if isinstance(return_origin, str) else None
+
+
 def _frontend_redirect(
     provider: str,
     status: str,
@@ -257,17 +273,20 @@ def _range_options(
         }
 
     selected_weeks = weeks or 12
+    range_end = datetime.now(timezone.utc)
+    end_at = range_end.isoformat()
+    start_at = (range_end - timedelta(weeks=selected_weeks)).isoformat()
     return {
         "mode": "preset",
         "label": f"Last {selected_weeks} weeks",
         "weeks": selected_weeks,
-        "start_at": None,
-        "end_at": None,
+        "start_at": start_at,
+        "end_at": end_at,
         "meta": {
             "mode": "preset",
             "label": f"Last {selected_weeks} weeks",
-            "start_date": None,
-            "end_date": None,
+            "start_date": start_at,
+            "end_date": end_at,
         },
     }
 
@@ -366,22 +385,13 @@ def activities(
     end_date: date | None = Query(None),
 ) -> dict:
     selected_range = _range_options(weeks, all_time, start_date, end_date)
-    if selected_range["weeks"] is not None:
-        # Keep preset activity lists aligned with the analytics window.
-        start_at = (
-            datetime.now(timezone.utc) - timedelta(weeks=selected_range["weeks"])
-        ).isoformat()
-        end_at = None
-    else:
-        start_at = selected_range["start_at"]
-        end_at = selected_range["end_at"]
     return {
         "activities": repository.list_canonical_activities(
             user_id,
             limit=limit,
             offset=offset,
-            start_at=start_at,
-            end_at=end_at,
+            start_at=selected_range["start_at"],
+            end_at=selected_range["end_at"],
         ),
         "total_activities": repository.count_canonical_activities(user_id),
     }

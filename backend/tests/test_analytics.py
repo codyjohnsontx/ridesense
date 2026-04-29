@@ -47,13 +47,13 @@ def test_analyze_activities_supports_selected_all_time_window_with_total_count()
         activities,
         weeks=None,
         total_activities=12,
-        range_meta={"mode": "all", "label": "All time", "start_date": None, "end_date": None},
     )
 
     assert result["meta"]["total_activities"] == 12
     assert result["meta"]["recent_activities"] == 1
     assert result["meta"]["weeks"] is None
     assert result["meta"]["range"]["mode"] == "all"
+    assert result["meta"]["range"]["label"] == "All time"
     assert result["summary"]["total_recent_load"] == 40
 
 

@@ -104,6 +104,9 @@ def test_dashboard_keeps_total_imported_count_when_window_filters_old_data(tmp_p
 
     assert dashboard["analysis"]["meta"]["total_activities"] == 3
     assert dashboard["analysis"]["meta"]["recent_activities"] == 2
+    assert dashboard["analysis"]["meta"]["range"]["mode"] == "preset"
+    assert dashboard["analysis"]["meta"]["range"]["start_date"] is not None
+    assert dashboard["analysis"]["meta"]["range"]["end_date"] is not None
     assert dashboard["analysis"]["summary"]["total_recent_load"] == 165
     assert [a["name"] for a in activities["activities"]] == ["API Threshold", "API Endurance"]
     assert activities["total_activities"] == 3
@@ -143,7 +146,7 @@ def test_custom_date_range_is_inclusive_and_validated(tmp_path, monkeypatch):
     assert [a["name"] for a in activities["activities"]] == ["Old Base Ride"]
 
     missing_pair = client.get(f"/dashboard?start_date={old_day}")
-    reversed_pair = client.get(f"/dashboard?start_date=2026-02-01&end_date=2026-01-01")
+    reversed_pair = client.get("/dashboard?start_date=2026-02-01&end_date=2026-01-01")
     assert missing_pair.status_code == 422
     assert reversed_pair.status_code == 422
 

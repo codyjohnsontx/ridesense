@@ -75,7 +75,7 @@ def analyze_activities(
             "weeks": weeks,
             "range": range_meta
             or {
-                "mode": "preset",
+                "mode": "preset" if weeks is not None else "all",
                 "label": f"Last {weeks} weeks" if weeks is not None else "All time",
                 "start_date": None,
                 "end_date": None,

@@ -25,7 +25,7 @@ function formatLastSync(iso?: string | null) {
 }
 
 function rangeEndDate(range: TimeRange, activities: Activity[]) {
-  if (range.mode === "custom") return new Date(`${range.endDate}T00:00:00`);
+  if (range.mode === "custom") return new Date(`${range.endDate}T23:59:59.999Z`);
   if (range.mode === "all" && activities.length > 0) {
     const latest = Math.max(...activities.map((a) => new Date(a.started_at).getTime()).filter(Number.isFinite));
     if (Number.isFinite(latest)) return new Date(latest);
