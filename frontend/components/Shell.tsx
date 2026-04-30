@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
+import { Logo } from "./Logo";
 import { Badge, Button, Card } from "./ui";
 
 export type ScreenId =
@@ -47,9 +48,7 @@ export function Shell({ active, onNav, lastSync, syncStatus = "ok", onSyncNow, s
     <div className="flex min-h-screen bg-background">
       <aside className="sticky top-0 flex h-screen w-[232px] flex-none flex-col gap-3.5 border-r border-border bg-background px-3 py-4">
         <div className="flex items-center gap-2.5 px-2 py-1">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Icon name="activity" size={15} />
-          </div>
+          <Logo size={28} className="text-primary" />
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold">RideSense</span>
             <span className="text-[11px] text-muted-foreground">v 0.4 · beta</span>
