@@ -3,6 +3,11 @@
 import { useState, type PointerEvent } from "react";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const chartDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "2-digit",
+  timeZone: "UTC"
+});
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -14,7 +19,12 @@ function pointerX(event: PointerEvent<SVGSVGElement>, width: number) {
 }
 
 function formatChartDate(date: Date) {
-  return date.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+  return chartDateFormatter.format(date);
+}
+
+export function formatDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return chartDateFormatter.format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 function dateAtIndex(endDate: Date, index: number, total: number) {
@@ -182,7 +192,7 @@ export function WeeklyLoadChart({
   h = 110,
   highlight = -1
 }: {
-  weekly: Array<{ load: number; week_start?: string }>;
+  weekly: Array<{ load: number; week_start: string }>;
   w?: number;
   h?: number;
   highlight?: number;
@@ -212,8 +222,7 @@ export function WeeklyLoadChart({
       <div className="mono h-4 text-[11.5px] text-foreground">
         {active ? (
           <>
-            {active.week_start ? `${formatChartDate(new Date(active.week_start))} · ` : ""}
-            {Math.round(active.load)} TSS
+            {formatDateOnly(active.week_start)} · {Math.round(active.load)} TSS
           </>
         ) : null}
       </div>

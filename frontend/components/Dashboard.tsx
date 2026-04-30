@@ -2,7 +2,7 @@
 
 import type { Activity, DashboardResponse, GroundedAnswer, TimeRange } from "@/lib/api";
 import { buildDailyTss, buildZoneRows, computeFormSeries, deriveVerdict } from "@/lib/training";
-import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar } from "./charts";
+import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar, formatDateOnly } from "./charts";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
 import { TimeRangeControl } from "./TimeRangeControl";
@@ -99,12 +99,9 @@ export function Dashboard({
   const weekRange = (() => {
     const last = weekly[weekly.length - 1];
     if (!last) return "Last week";
-    const start = new Date(last.week_start);
-    const end = new Date(start.getTime() + 6 * 24 * 3600 * 1000);
-    return `${start.toLocaleDateString("en-US", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("en-US", {
-      day: "2-digit",
-      month: "short"
-    })}`;
+    const [year, month, day] = last.week_start.split("-").map(Number);
+    const end = new Date(Date.UTC(year, month - 1, day + 6));
+    return `${formatDateOnly(last.week_start)} – ${formatDateOnly(end.toISOString().slice(0, 10))}`;
   })();
 
   return (
@@ -188,7 +185,7 @@ export function Dashboard({
               <div>
                 <CardTitle>Form / fitness curve</CardTitle>
                 <CardDescription className="mt-0.5">
-                  {rangeDays}-day rolling window · CTL · ATL · TSB
+                  {rangeDays}-day rolling window · Fitness · Fatigue · Form
                 </CardDescription>
               </div>
               <div className="mono flex flex-wrap gap-3.5 text-[11.5px]">
