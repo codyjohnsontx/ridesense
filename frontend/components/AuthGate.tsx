@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "./icons";
+import { Logo } from "./Logo";
 import { Badge, Button, Card, CardContent, Input } from "./ui";
 
 export function AuthGate({
@@ -32,9 +32,7 @@ export function AuthGate({
       <Card className="w-full max-w-[420px]">
         <CardContent className="gap-5 p-7">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Icon name="activity" size={18} />
-            </div>
+            <Logo size={36} className="text-primary" />
             <div className="flex flex-col leading-tight">
               <span className="text-base font-semibold">RideSense</span>
               <span className="text-[11px] text-muted-foreground">v 0.4 · beta</span>
