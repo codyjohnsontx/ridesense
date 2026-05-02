@@ -2,7 +2,7 @@
 
 import type { Activity, DashboardResponse, GroundedAnswer, TimeRange } from "@/lib/api";
 import { buildDailyTss, buildZoneRows, computeFormSeries, deriveVerdict } from "@/lib/training";
-import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar } from "./charts";
+import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar, formatDateOnly } from "./charts";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
 import { TimeRangeControl } from "./TimeRangeControl";
@@ -35,6 +35,14 @@ function rangeEndDate(range: TimeRange, activities: Activity[]) {
     if (Number.isFinite(latest)) return utcEndOfDay(new Date(latest));
   }
   return utcEndOfDay(new Date());
+}
+
+function MetricLabel({ label, title }: { label: string; title: string }) {
+  return (
+    <abbr title={title} className="cursor-default no-underline decoration-dotted underline-offset-2 hover:underline">
+      {label}
+    </abbr>
+  );
 }
 
 export function Dashboard({
@@ -91,12 +99,9 @@ export function Dashboard({
   const weekRange = (() => {
     const last = weekly[weekly.length - 1];
     if (!last) return "Last week";
-    const start = new Date(last.week_start);
-    const end = new Date(start.getTime() + 6 * 24 * 3600 * 1000);
-    return `${start.toLocaleDateString("en-US", { day: "2-digit", month: "short" })} – ${end.toLocaleDateString("en-US", {
-      day: "2-digit",
-      month: "short"
-    })}`;
+    const [year, month, day] = last.week_start.split("-").map(Number);
+    const end = new Date(Date.UTC(year, month - 1, day + 6));
+    return `${formatDateOnly(last.week_start)} – ${formatDateOnly(end.toISOString().slice(0, 10))}`;
   })();
 
   return (
@@ -180,48 +185,32 @@ export function Dashboard({
               <div>
                 <CardTitle>Form / fitness curve</CardTitle>
                 <CardDescription className="mt-0.5">
-                  {rangeDays}-day rolling window · CTL · ATL · TSB
+                  {rangeDays}-day rolling window · Fitness · Fatigue · Form
                 </CardDescription>
               </div>
               <div className="mono flex flex-wrap gap-3.5 text-[11.5px]">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i className="inline-block h-0.5 w-2.5 bg-foreground" />
-                  CTL {form.ctlNow.toFixed(0)}
+                  <MetricLabel label="Fitness" title="CTL: Chronic Training Load, your longer-term fitness trend." />{" "}
+                  {form.ctlNow.toFixed(0)}
                 </span>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i className="inline-block h-0.5 w-2.5 bg-muted-foreground" />
-                  ATL {form.atlNow.toFixed(0)}
+                  <MetricLabel label="Fatigue" title="ATL: Acute Training Load, your recent fatigue from short-term training." />{" "}
+                  {form.atlNow.toFixed(0)}
                 </span>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i
                     className="inline-block w-2.5"
                     style={{ borderTop: "1px dashed hsl(var(--muted-foreground))" }}
                   />
-                  TSB {form.tsbNow.toFixed(0)}
+                  <MetricLabel label="Form" title="TSB: Training Stress Balance, your freshness/readiness. Fitness minus fatigue." />{" "}
+                  {form.tsbNow.toFixed(0)}
                 </span>
               </div>
             </CardHeader>
             <CardContent className="px-5 pb-4 pt-3">
-              <div className="relative">
-                <FormFitnessCurve ctl={form.ctl} atl={form.atl} tsb={form.tsb} h={210} />
-                <div className="mono absolute right-2 top-2 rounded-md border border-border bg-popover px-2.5 py-2 text-[11.5px] leading-snug shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
-                  <div className="mb-1 font-semibold">
-                    {chartEndDate.toLocaleDateString("en-US", { month: "short", day: "2-digit" })} · range end
-                  </div>
-                  <div className="text-muted-foreground">
-                    CTL <span className="text-foreground">{form.ctlNow.toFixed(0)}</span>
-                  </div>
-                  <div className="text-muted-foreground">
-                    ATL <span className="text-foreground">{form.atlNow.toFixed(0)}</span>
-                  </div>
-                  <div className="text-muted-foreground">
-                    TSB{" "}
-                    <span className={form.tsbNow < 0 ? "text-[hsl(var(--warning))]" : "text-foreground"}>
-                      {form.tsbNow.toFixed(0)}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <FormFitnessCurve ctl={form.ctl} atl={form.atl} tsb={form.tsb} endDate={chartEndDate} h={210} />
             </CardContent>
           </Card>
 
@@ -451,7 +440,7 @@ export function Dashboard({
                 <CardDescription>{Math.ceil(daily.length / 7)} weeks · daily TSS</CardDescription>
               </CardHeader>
               <CardContent>
-                <WeekHeatmap daily={daily} h={62} />
+                <WeekHeatmap daily={daily} endDate={chartEndDate} h={62} />
               </CardContent>
             </Card>
             <Card>
