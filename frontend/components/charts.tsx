@@ -76,6 +76,7 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
   const activePointX = activeIndex >= 0 ? xAt(activeIndex, ctl.length) : 0;
   const activeX = hover?.x ?? activePointX;
   const activeDate = activeIndex >= 0 ? dateAtIndex(endDate, activeIndex, ctl.length) : endDate;
+  const startDate = ctl.length > 0 ? dateAtIndex(endDate, 0, ctl.length) : endDate;
   const activeTsb = activeIndex >= 0 ? tsb[activeIndex] ?? 0 : 0;
   const activeCtl = activeIndex >= 0 ? ctl[activeIndex] ?? 0 : 0;
   const activeAtl = activeIndex >= 0 ? atl[activeIndex] ?? 0 : 0;
@@ -110,7 +111,7 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
-        style={{ display: "block", touchAction: "none" }}
+        style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
         onPointerLeave={() => setHover(null)}
@@ -176,10 +177,10 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
         </>
       ) : null}
       <text x={padL} y={h - 6} fontSize="10" fill="hsl(var(--muted-foreground))" className="mono" opacity="0.7">
-        12W AGO
+        {formatChartDate(startDate)}
       </text>
       <text x={w - padR} y={h - 6} fontSize="10" textAnchor="end" fill="hsl(var(--muted-foreground))" className="mono" opacity="0.7">
-        TODAY
+        {formatChartDate(endDate)}
       </text>
       </svg>
     </div>
@@ -230,7 +231,7 @@ export function WeeklyLoadChart({
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
-        style={{ display: "block", touchAction: "none" }}
+        style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
         onPointerLeave={() => setHoverIndex(null)}
@@ -317,7 +318,7 @@ export function ZoneStackBar({
           borderRadius: 2,
           overflow: "hidden",
           background: "hsl(var(--muted))",
-          touchAction: "none"
+          touchAction: "pan-y"
         }}
       >
         {zones.map((z, i) => (
@@ -362,8 +363,16 @@ export function WeekHeatmap({
     const x = pointerX(event, w);
     const rect = event.currentTarget.getBoundingClientRect();
     const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * h;
-    const wk = Math.floor(x / (cell + 2));
-    const dow = Math.floor(y / (cell * 0.8 + 1));
+    const colTile = cell + 2;
+    const rowTile = cell * 0.8 + 1;
+    const modX = x % colTile;
+    const modY = y % rowTile;
+    if (modX >= cell || modY >= cell * 0.8) {
+      setHoverIndex(null);
+      return;
+    }
+    const wk = Math.floor(x / colTile);
+    const dow = Math.floor(y / rowTile);
     const idx = wk * 7 + dow;
     if (idx >= 0 && idx < daily.length && dow >= 0 && dow < rows) {
       setHoverIndex(idx);
@@ -383,7 +392,7 @@ export function WeekHeatmap({
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
-        style={{ display: "block", touchAction: "none" }}
+        style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
         onPointerLeave={() => setHoverIndex(null)}
