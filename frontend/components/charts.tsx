@@ -22,6 +22,10 @@ function formatChartDate(date: Date) {
   return chartDateFormatter.format(date);
 }
 
+function moveIndex(index: number, delta: number, max: number) {
+  return clamp(index + delta, 0, max);
+}
+
 export function formatDateOnly(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return chartDateFormatter.format(new Date(Date.UTC(year, month - 1, day)));
@@ -81,11 +85,45 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
   const activeCtl = activeIndex >= 0 ? ctl[activeIndex] ?? 0 : 0;
   const activeAtl = activeIndex >= 0 ? atl[activeIndex] ?? 0 : 0;
 
+  function setHoverAtIndex(index: number) {
+    if (ctl.length === 0) {
+      setHover(null);
+      return;
+    }
+    const nextIndex = clamp(index, 0, ctl.length - 1);
+    setHover({ index: nextIndex, x: xAt(nextIndex, ctl.length) });
+  }
+
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     if (ctl.length === 0) return;
     const x = clamp(pointerX(event, w), padL, w - padR);
     const ratio = (x - padL) / Math.max(1, innerW);
     setHover({ index: clamp(Math.round(ratio * (ctl.length - 1)), 0, ctl.length - 1), x });
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<SVGSVGElement>) {
+    if (ctl.length === 0) return;
+    const current = hover?.index ?? ctl.length - 1;
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        setHoverAtIndex(moveIndex(current, -1, ctl.length - 1));
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        setHoverAtIndex(moveIndex(current, 1, ctl.length - 1));
+        break;
+      case "Home":
+        event.preventDefault();
+        setHoverAtIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setHoverAtIndex(ctl.length - 1);
+        break;
+    }
   }
 
   return (
@@ -111,9 +149,15 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
+        tabIndex={0}
+        role="group"
+        aria-label="Form fitness curve. Use arrow keys to inspect fitness, fatigue, and form by day."
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
+        onFocus={() => setHoverAtIndex(ctl.length - 1)}
+        onBlur={() => setHover(null)}
+        onKeyDown={handleKeyDown}
         onPointerLeave={() => setHover(null)}
       >
       {ticks.map((t) => (
@@ -213,9 +257,37 @@ export function WeeklyLoadChart({
   const hi = hoverIndex ?? (highlight < 0 ? weekly.length - 1 : highlight);
   const active = weekly[hi];
 
+  function setActiveIndex(index: number) {
+    setHoverIndex(clamp(index, 0, weekly.length - 1));
+  }
+
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     const x = clamp(pointerX(event, w), padL, w - padR);
-    setHoverIndex(clamp(Math.floor((x - padL) / Math.max(1, bw)), 0, weekly.length - 1));
+    setActiveIndex(Math.floor((x - padL) / Math.max(1, bw)));
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<SVGSVGElement>) {
+    const current = hoverIndex ?? (highlight < 0 ? weekly.length - 1 : highlight);
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, -1, weekly.length - 1));
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, 1, weekly.length - 1));
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(weekly.length - 1);
+        break;
+    }
   }
 
   return (
@@ -231,9 +303,15 @@ export function WeeklyLoadChart({
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
+        tabIndex={0}
+        role="group"
+        aria-label="Weekly training load chart. Use arrow keys to inspect each week."
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
+        onFocus={() => setActiveIndex(highlight < 0 ? weekly.length - 1 : highlight)}
+        onBlur={() => setHoverIndex(null)}
+        onKeyDown={handleKeyDown}
         onPointerLeave={() => setHoverIndex(null)}
       >
       <line
@@ -308,7 +386,7 @@ export function ZoneStackBar({
   return (
     <div className="space-y-1.5">
       <div className="mono h-4 text-[11px] text-foreground">
-        {active ? `${active.key} · ${active.load} TSS · ${active.pct}%` : "Hover a zone for load"}
+        {active ? `${active.key} · ${active.load} TSS · ${active.pct}%` : "Hover or tap a zone for load"}
       </div>
       <div
         onPointerLeave={() => setHoverIndex(null)}
@@ -359,6 +437,14 @@ export function WeekHeatmap({
   const max = Math.max(...daily, 1);
   const active = hoverIndex === null ? null : daily[hoverIndex];
 
+  function setActiveIndex(index: number | null) {
+    if (index === null) {
+      setHoverIndex(null);
+      return;
+    }
+    setHoverIndex(clamp(index, 0, daily.length - 1));
+  }
+
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     const x = pointerX(event, w);
     const rect = event.currentTarget.getBoundingClientRect();
@@ -375,9 +461,40 @@ export function WeekHeatmap({
     const dow = Math.floor(y / rowTile);
     const idx = wk * 7 + dow;
     if (idx >= 0 && idx < daily.length && dow >= 0 && dow < rows) {
-      setHoverIndex(idx);
+      setActiveIndex(idx);
     } else {
-      setHoverIndex(null);
+      setActiveIndex(null);
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<SVGSVGElement>) {
+    if (daily.length === 0) return;
+    const current = hoverIndex ?? daily.length - 1;
+    switch (event.key) {
+      case "ArrowLeft":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, -7, daily.length - 1));
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, 7, daily.length - 1));
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, -1, daily.length - 1));
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        setActiveIndex(moveIndex(current, 1, daily.length - 1));
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(daily.length - 1);
+        break;
     }
   }
 
@@ -385,16 +502,22 @@ export function WeekHeatmap({
     <div className="space-y-1.5">
       <div className="mono h-4 text-[11.5px] text-foreground">
         {hoverIndex === null
-          ? "Hover a day"
+          ? "Hover or tap a day"
           : `${formatChartDate(dateAtIndex(endDate, hoverIndex, daily.length))} · ${Math.round(active ?? 0)} TSS`}
       </div>
       <svg
         viewBox={`0 0 ${w} ${h}`}
         width="100%"
         height={h}
+        tabIndex={0}
+        role="group"
+        aria-label="Training heatmap. Use arrow keys to inspect each day."
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
+        onFocus={() => setActiveIndex(daily.length - 1)}
+        onBlur={() => setActiveIndex(null)}
+        onKeyDown={handleKeyDown}
         onPointerLeave={() => setHoverIndex(null)}
       >
       {daily.map((v, i) => {
