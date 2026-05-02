@@ -367,6 +367,8 @@ export function WeekHeatmap({
     const idx = wk * 7 + dow;
     if (idx >= 0 && idx < daily.length && dow >= 0 && dow < rows) {
       setHoverIndex(idx);
+    } else {
+      setHoverIndex(null);
     }
   }
 
