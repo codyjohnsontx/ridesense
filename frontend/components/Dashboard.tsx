@@ -1,12 +1,24 @@
 "use client";
 
 import type { Activity, DashboardResponse, GroundedAnswer, TimeRange } from "@/lib/api";
+import { METRICS } from "@/lib/metrics";
 import { buildDailyTss, buildZoneRows, computeFormSeries, deriveVerdict } from "@/lib/training";
 import { FormFitnessCurve, WeekHeatmap, WeeklyLoadChart, ZoneStackBar, formatDateOnly } from "./charts";
 import { Icon } from "./icons";
 import { PageHeader } from "./Shell";
 import { TimeRangeControl } from "./TimeRangeControl";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Delta, Input } from "./ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Delta,
+  Input,
+  MetricLabel,
+} from "./ui";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "2-digit" });
@@ -35,14 +47,6 @@ function rangeEndDate(range: TimeRange, activities: Activity[]) {
     if (Number.isFinite(latest)) return utcEndOfDay(new Date(latest));
   }
   return utcEndOfDay(new Date());
-}
-
-function MetricLabel({ label, title }: { label: string; title: string }) {
-  return (
-    <abbr title={title} className="cursor-default no-underline decoration-dotted underline-offset-2 hover:underline">
-      {label}
-    </abbr>
-  );
 }
 
 export function Dashboard({
@@ -191,21 +195,18 @@ export function Dashboard({
               <div className="mono flex flex-wrap gap-3.5 text-[11.5px]">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i className="inline-block h-0.5 w-2.5 bg-foreground" />
-                  <MetricLabel label="Fitness" title="CTL: Chronic Training Load, your longer-term fitness trend." />{" "}
-                  {form.ctlNow.toFixed(0)}
+                  <MetricLabel metric={METRICS.ctl} /> {form.ctlNow.toFixed(0)}
                 </span>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i className="inline-block h-0.5 w-2.5 bg-muted-foreground" />
-                  <MetricLabel label="Fatigue" title="ATL: Acute Training Load, your recent fatigue from short-term training." />{" "}
-                  {form.atlNow.toFixed(0)}
+                  <MetricLabel metric={METRICS.atl} /> {form.atlNow.toFixed(0)}
                 </span>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <i
                     className="inline-block w-2.5"
                     style={{ borderTop: "1px dashed hsl(var(--muted-foreground))" }}
                   />
-                  <MetricLabel label="Form" title="TSB: Training Stress Balance, your freshness/readiness. Fitness minus fatigue." />{" "}
-                  {form.tsbNow.toFixed(0)}
+                  <MetricLabel metric={METRICS.tsb} /> {form.tsbNow.toFixed(0)}
                 </span>
               </div>
             </CardHeader>

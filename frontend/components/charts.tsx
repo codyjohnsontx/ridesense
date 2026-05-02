@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState, type PointerEvent } from "react";
+import { METRICS } from "@/lib/metrics";
+import { MetricLabel } from "./ui";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const chartDateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -34,14 +36,6 @@ export function formatDateOnly(value: string) {
 function dateAtIndex(endDate: Date, index: number, total: number) {
   const end = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
   return new Date(end - (total - 1 - index) * DAY_MS);
-}
-
-function MetricLabel({ label, title }: { label: string; title: string }) {
-  return (
-    <abbr title={title} className="cursor-default no-underline decoration-dotted underline-offset-2 hover:underline">
-      {label}
-    </abbr>
-  );
 }
 
 type FormFitnessCurveProps = {
@@ -137,15 +131,15 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
       >
         <span className="font-semibold">{formatChartDate(activeDate)}</span>
         <span className="text-muted-foreground">
-          <MetricLabel label="Fitness" title="CTL: Chronic Training Load, your longer-term fitness trend." />{" "}
+          <MetricLabel metric={METRICS.ctl} />{" "}
           <span className="text-foreground">{Math.round(activeCtl)}</span>
         </span>
         <span className="text-muted-foreground">
-          <MetricLabel label="Fatigue" title="ATL: Acute Training Load, your recent fatigue from short-term training." />{" "}
+          <MetricLabel metric={METRICS.atl} />{" "}
           <span className="text-foreground">{Math.round(activeAtl)}</span>
         </span>
         <span className="text-muted-foreground">
-          <MetricLabel label="Form" title="TSB: Training Stress Balance, your freshness/readiness. Fitness minus fatigue." />{" "}
+          <MetricLabel metric={METRICS.tsb} />{" "}
           <span className={activeTsb < 0 ? "text-[hsl(var(--warning))]" : "text-foreground"}>
             {Math.round(activeTsb)}
           </span>
@@ -303,7 +297,8 @@ export function WeeklyLoadChart({
       <div id={readoutId} aria-live="polite" aria-atomic="true" className="mono h-4 text-[11.5px] text-foreground">
         {active ? (
           <>
-            {formatDateOnly(active.week_start)} · {Math.round(active.load)} TSS
+            {formatDateOnly(active.week_start)} · {Math.round(active.load)}{" "}
+            <MetricLabel metric={METRICS.tss_week} label="TSS" />
           </>
         ) : null}
       </div>
@@ -427,7 +422,15 @@ export function ZoneStackBar({
   return (
     <div className="space-y-1.5">
       <div className="mono h-4 text-[11px] text-foreground">
-        {active ? `${active.key} · ${active.load} TSS · ${active.pct}%` : "Hover or tap a zone for load"}
+        {active ? (
+          <>
+            {active.key} · {active.load} <MetricLabel metric={METRICS.zone_load} label="TSS" /> · {active.pct}%
+          </>
+        ) : (
+          <>
+            Hover or tap a zone for <MetricLabel metric={METRICS.zone_load} label="load" />
+          </>
+        )}
       </div>
       <div
         onPointerLeave={() => setHoverIndex(null)}
@@ -548,9 +551,14 @@ export function WeekHeatmap({
   return (
     <div className="space-y-1.5">
       <div id={readoutId} aria-live="polite" aria-atomic="true" className="mono h-4 text-[11.5px] text-foreground">
-        {hoverIndex === null
-          ? "Hover or tap a day"
-          : `${formatChartDate(dateAtIndex(endDate, hoverIndex, daily.length))} · ${Math.round(active ?? 0)} TSS`}
+        {hoverIndex === null ? (
+          "Hover or tap a day"
+        ) : (
+          <>
+            {formatChartDate(dateAtIndex(endDate, hoverIndex, daily.length))} · {Math.round(active ?? 0)}{" "}
+            <MetricLabel metric={METRICS.tss_day} label="TSS" />
+          </>
+        )}
       </div>
       <svg
         viewBox={`0 0 ${w} ${h}`}

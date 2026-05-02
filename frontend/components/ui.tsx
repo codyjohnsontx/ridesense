@@ -8,6 +8,7 @@ import {
   useId,
   useRef
 } from "react";
+import type { MetricMeta } from "@/lib/metrics";
 import { Icon } from "./icons";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -236,6 +237,24 @@ export function Delta({ value, suffix = "%" }: { value: number; suffix?: string 
       {value}
       {suffix}
     </Badge>
+  );
+}
+
+export function MetricLabel({ metric, label }: { metric: MetricMeta; label?: string }) {
+  const describeId = useId();
+  return (
+    <>
+      <abbr
+        title={metric.title}
+        aria-describedby={describeId}
+        className="cursor-default no-underline decoration-dotted underline-offset-2 hover:underline"
+      >
+        {label ?? metric.label}
+      </abbr>
+      <span id={describeId} className="sr-only">
+        {metric.title}
+      </span>
+    </>
   );
 }
 
