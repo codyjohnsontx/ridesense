@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type PointerEvent } from "react";
+import { useId, useState, type PointerEvent } from "react";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const chartDateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -55,6 +55,7 @@ type FormFitnessCurveProps = {
 
 export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720, h = 220 }: FormFitnessCurveProps) {
   const [hover, setHover] = useState<{ index: number; x: number } | null>(null);
+  const readoutId = useId();
   const padL = 28;
   const padR = 12;
   const padT = 14;
@@ -128,7 +129,12 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
 
   return (
     <div className="space-y-2">
-      <div className="mono flex h-6 items-center gap-3 rounded-md border border-border bg-popover px-2.5 text-[11.5px] text-foreground">
+      <div
+        id={readoutId}
+        aria-live="polite"
+        aria-atomic="true"
+        className="mono flex h-6 items-center gap-3 rounded-md border border-border bg-popover px-2.5 text-[11.5px] text-foreground"
+      >
         <span className="font-semibold">{formatChartDate(activeDate)}</span>
         <span className="text-muted-foreground">
           <MetricLabel label="Fitness" title="CTL: Chronic Training Load, your longer-term fitness trend." />{" "}
@@ -152,6 +158,7 @@ export function FormFitnessCurve({ ctl, atl, tsb, endDate = new Date(), w = 720,
         tabIndex={0}
         role="group"
         aria-label="Form fitness curve. Use arrow keys to inspect fitness, fatigue, and form by day."
+        aria-describedby={readoutId}
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
@@ -243,6 +250,7 @@ export function WeeklyLoadChart({
   highlight?: number;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const readoutId = useId();
   if (weekly.length === 0) return null;
   const padL = 4;
   const padR = 4;
@@ -292,7 +300,7 @@ export function WeeklyLoadChart({
 
   return (
     <div className="space-y-1">
-      <div className="mono h-4 text-[11.5px] text-foreground">
+      <div id={readoutId} aria-live="polite" aria-atomic="true" className="mono h-4 text-[11.5px] text-foreground">
         {active ? (
           <>
             {formatDateOnly(active.week_start)} · {Math.round(active.load)} TSS
@@ -306,6 +314,7 @@ export function WeeklyLoadChart({
         tabIndex={0}
         role="group"
         aria-label="Weekly training load chart. Use arrow keys to inspect each week."
+        aria-describedby={readoutId}
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
@@ -383,6 +392,38 @@ export function ZoneStackBar({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const total = zones.reduce((a, b) => a + b.load, 0) || 1;
   const active = hoverIndex === null ? null : zones[hoverIndex];
+
+  function setZoneIndex(index: number | null) {
+    if (index === null || zones.length === 0) {
+      setHoverIndex(null);
+      return;
+    }
+    setHoverIndex(clamp(index, 0, zones.length - 1));
+  }
+
+  function handleZoneKeyDown(event: React.KeyboardEvent<HTMLDivElement>, index: number) {
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+        event.preventDefault();
+        setZoneIndex(moveIndex(index, -1, zones.length - 1));
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+        event.preventDefault();
+        setZoneIndex(moveIndex(index, 1, zones.length - 1));
+        break;
+      case "Home":
+        event.preventDefault();
+        setZoneIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setZoneIndex(zones.length - 1);
+        break;
+    }
+  }
+
   return (
     <div className="space-y-1.5">
       <div className="mono h-4 text-[11px] text-foreground">
@@ -403,8 +444,13 @@ export function ZoneStackBar({
           <div
             key={z.key}
             title={`${z.key}: ${z.load} TSS`}
-            onPointerMove={() => setHoverIndex(i)}
-            onPointerDown={() => setHoverIndex(i)}
+            tabIndex={0}
+            aria-label={`${z.key}: ${z.load} TSS, ${z.pct} percent of load`}
+            onPointerMove={() => setZoneIndex(i)}
+            onPointerDown={() => setZoneIndex(i)}
+            onFocus={() => setZoneIndex(i)}
+            onBlur={() => setZoneIndex(null)}
+            onKeyDown={(event) => handleZoneKeyDown(event, i)}
             style={{
               flex: z.load / total,
               background: `hsl(var(--rs-z${i + 1}))`,
@@ -429,6 +475,7 @@ export function WeekHeatmap({
   h?: number;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const readoutId = useId();
   const weeks = Math.max(1, Math.ceil(daily.length / 7));
   const rows = 7;
   const maxCellByHeight = (h - (rows - 1)) / (rows * 0.8);
@@ -438,7 +485,7 @@ export function WeekHeatmap({
   const active = hoverIndex === null ? null : daily[hoverIndex];
 
   function setActiveIndex(index: number | null) {
-    if (index === null) {
+    if (index === null || daily.length === 0) {
       setHoverIndex(null);
       return;
     }
@@ -500,7 +547,7 @@ export function WeekHeatmap({
 
   return (
     <div className="space-y-1.5">
-      <div className="mono h-4 text-[11.5px] text-foreground">
+      <div id={readoutId} aria-live="polite" aria-atomic="true" className="mono h-4 text-[11.5px] text-foreground">
         {hoverIndex === null
           ? "Hover or tap a day"
           : `${formatChartDate(dateAtIndex(endDate, hoverIndex, daily.length))} · ${Math.round(active ?? 0)} TSS`}
@@ -512,6 +559,7 @@ export function WeekHeatmap({
         tabIndex={0}
         role="group"
         aria-label="Training heatmap. Use arrow keys to inspect each day."
+        aria-describedby={readoutId}
         style={{ display: "block", touchAction: "pan-y" }}
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerMove}
