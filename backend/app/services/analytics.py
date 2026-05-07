@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from app.services.goal_profile import _goal_profile
 
-DAY = timedelta(days=1)
+
 CTL_TAU_DAYS = 42
 ATL_TAU_DAYS = 7
 
@@ -108,7 +110,6 @@ def _analysis_end_date(activities: list[dict[str, Any]], end_at: str | None) -> 
 
 
 def _analysis_start_date(
-    activities: list[dict[str, Any]],
     visible: list[dict[str, Any]],
     start_at: str | None,
     end_day: date,
@@ -145,7 +146,7 @@ def _daily_load_series(
 def _ema(values: list[float], tau: float) -> list[float]:
     if not values:
         return []
-    alpha = 1 - pow(2.718281828459045, -1 / tau)
+    alpha = 1 - math.exp(-1 / tau)
     out: list[float] = []
     prev = 0.0
     for value in values:
@@ -223,22 +224,6 @@ def _load_quality(activities: list[dict[str, Any]], history_days: int) -> dict[s
         "enough_history": history_days >= 42,
         "note": note,
     }
-
-
-def _goal_profile(profile: dict[str, Any] | None) -> str:
-    if not profile:
-        return "general"
-    text = " ".join(
-        str(profile.get(key) or "").lower()
-        for key in ["event_type", "goals", "constraints", "recovery_notes", "training_days"]
-    )
-    if any(token in text for token in ["gran fondo", "endurance", "gravel", "ultra", "road race"]):
-        return "endurance"
-    if any(token in text for token in ["criterium", "crit", "cyclocross", "xco", "short track"]):
-        return "high_intensity"
-    if any(token in text for token in ["time trial", "tt", "pursuit"]):
-        return "steady_power"
-    return "general"
 
 
 def _verdict(
@@ -322,7 +307,7 @@ def analyze_activities(
 ) -> dict[str, Any]:
     visible = _filter_visible(activities, weeks=weeks, start_at=start_at, end_at=end_at)
     end_day = _analysis_end_date(activities, end_at)
-    visible_start = _analysis_start_date(activities, visible, start_at, end_day)
+    visible_start = _analysis_start_date(visible, start_at, end_day)
     history = [activity for activity in activities if _utc_date(activity["started_at"]) <= end_day]
 
     weekly: dict[str, dict[str, Any]] = defaultdict(
@@ -361,7 +346,7 @@ def analyze_activities(
     quality = _load_quality(visible, history_days=history_days)
     verdict = _verdict(form, weekly_rows, quality, profile)
 
-    top_workouts = sorted(visible, key=lambda item: load_value(item), reverse=True)[:10]
+    top_workouts = sorted(visible, key=load_value, reverse=True)[:10]
 
     return {
         "meta": {

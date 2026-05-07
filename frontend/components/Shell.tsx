@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { Logo } from "./Logo";
 import { Badge, Button, Card } from "./ui";
@@ -30,10 +30,56 @@ type ShellProps = {
 export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRange, children }: ShellProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+
+    const selectors = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])"
+    ].join(",");
+
+    const focusable = Array.from(overlay.querySelectorAll<HTMLElement>(selectors));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || focusable.length === 0) return;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      triggerRef.current?.focus();
+    };
+  }, [menuOpen]);
 
   const syncBadge =
     syncStatus === "error" ? (
@@ -103,7 +149,15 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex min-w-0 items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
+            <Button
+              ref={triggerRef}
+              variant="ghost"
+              size="icon"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open navigation"
+              aria-expanded={menuOpen}
+              aria-controls="mobile-nav-overlay"
+            >
               <Icon name="menu" size={18} />
             </Button>
             <div className="flex min-w-0 items-center gap-2">
@@ -121,8 +175,20 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
         </header>
 
         {menuOpen ? (
-          <div className="fixed inset-0 z-40 bg-background lg:hidden">
-            <div className="flex h-full flex-col gap-4 px-4 py-4">
+          <div
+            className="fixed inset-0 z-40 bg-background/80 lg:hidden"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden="true"
+          >
+            <div
+              ref={overlayRef}
+              id="mobile-nav-overlay"
+              className="flex h-full flex-col gap-4 bg-background px-4 py-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Navigation menu"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Logo size={24} className="text-primary" />
