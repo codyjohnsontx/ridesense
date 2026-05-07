@@ -280,7 +280,12 @@ def list_canonical_activities(
             """,
             params,
         ).fetchall()
-    return [dict(row) for row in rows]
+    activities: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["load_source"] = "tss" if item.get("tss") is not None else "estimated" if item.get("estimated_load") is not None else "none"
+        activities.append(item)
+    return activities
 
 
 def save_answer(user_id: str, question: str, answer_json: dict[str, Any]) -> None:

@@ -99,7 +99,20 @@ const PATHS: Record<string, ReactElement> = {
       <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
     </>
   ),
-  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+  moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+  menu: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M3 12h18" />
+      <path d="M3 18h18" />
+    </>
+  ),
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  )
 };
 
 export function Icon({ name, size = 16, stroke = 1.75, ...rest }: IconProps & { name: keyof typeof PATHS }) {

@@ -42,6 +42,7 @@ export function TimeRangeControl({ range, onChange }: { range: TimeRange; onChan
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
       <Tabs
+        className="max-w-full overflow-x-auto"
         value={rangeControlValue(range)}
         ariaLabel="Training range"
         onChange={(value) => {

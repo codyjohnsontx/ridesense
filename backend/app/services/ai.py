@@ -11,14 +11,21 @@ from app.schemas import GroundedAnswer
 
 def fallback_answer(question: str, analysis: dict[str, Any], insights: list[dict[str, str]]) -> GroundedAnswer:
     summary = analysis["summary"]
+    verdict = analysis["verdict"]
+    load_quality = analysis["load_quality"]
     answer = (
-        f"Based on the selected training window, your average weekly load is "
-        f"{summary['avg_weekly_load']} and the trend is {summary['trend_pct']}%. "
-        f"The strongest current signal is: {insights[0]['title'] if insights else 'not enough data yet'}."
+        f"Based on the selected training window, the current read is '{verdict['headline']}' "
+        f"with an average weekly load of {summary['avg_weekly_load']} and a trend of {summary['trend_pct']}%. "
+        f"Confidence is {load_quality['confidence']}."
     )
     return GroundedAnswer(
         answer=answer,
         evidence=[
+            {
+                "metric_id": "analysis.verdict.headline",
+                "label": "Training-state verdict",
+                "value": verdict["headline"],
+            },
             {
                 "metric_id": "summary.avg_weekly_load",
                 "label": "Average weekly load",
@@ -29,8 +36,13 @@ def fallback_answer(question: str, analysis: dict[str, Any], insights: list[dict
                 "label": "Load trend",
                 "value": f"{summary['trend_pct']}%",
             },
+            {
+                "metric_id": "analysis.load_quality.confidence",
+                "label": "Load confidence",
+                "value": load_quality["confidence"],
+            },
         ],
-        confidence="medium" if analysis["meta"]["recent_activities"] >= 4 else "low",
+        confidence=load_quality["confidence"],
         caveats=["This is decision support, not medical advice or a prescriptive coaching plan."],
         follow_up_questions=[
             "Which zone is driving most of my training stress?",
