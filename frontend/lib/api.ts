@@ -19,8 +19,39 @@ export type DashboardResponse = {
       trend_pct: number;
       total_recent_load: number;
     };
+    form: {
+      daily_load: number[];
+      ctl: number[];
+      atl: number[];
+      tsb: number[];
+      ctl_now: number;
+      atl_now: number;
+      tsb_now: number;
+      ctl_change_pct_4w: number;
+      ramp_rate_per_week: number;
+      start_date: string;
+      end_date: string;
+    };
+    verdict: {
+      label: "Building" | "Maintaining" | "Detraining" | "Recovering";
+      qualifier: string;
+      headline: string;
+      detail: string;
+      reasoning: string;
+      next_step: string;
+    };
+    load_quality: {
+      confidence: "low" | "medium" | "high";
+      history_days: number;
+      proxy_share_pct: number;
+      tss_activity_count: number;
+      estimated_activity_count: number;
+      unscored_activity_count: number;
+      enough_history: boolean;
+      note: string;
+    };
     weekly: Array<{ week_start: string; load: number; count: number; duration_hours: number }>;
-    zone_breakdown: Record<string, { count: number; load: number }>;
+    category_breakdown: Record<string, { count: number; load: number }>;
     provider_counts: Record<string, number>;
     top_workouts: Array<Activity>;
   };
@@ -37,6 +68,7 @@ export type Activity = {
   duration_seconds: number;
   tss: number | null;
   estimated_load: number | null;
+  load_source: "tss" | "estimated" | "none";
   workout_category: string | null;
   source_priority: string;
   external_url?: string | null;

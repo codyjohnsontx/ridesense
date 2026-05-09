@@ -1,13 +1,13 @@
 import { Suspense } from "react";
 import { AppFrame } from "@/components/AppFrame";
 import { AppLoading } from "@/components/AppLoading";
-import { OverviewRoute } from "@/components/routes/AppPages";
+import { ActivitiesRoute } from "@/components/routes/AppPages";
 
-export default function Home() {
+export default function ActivitiesPage() {
   return (
     <Suspense fallback={<AppLoading />}>
       <AppFrame>
-        <OverviewRoute />
+        <ActivitiesRoute />
       </AppFrame>
     </Suspense>
   );

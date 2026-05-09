@@ -416,12 +416,8 @@ def dashboard(
 ) -> dict:
     selected_range = _range_options(weeks, all_time, start_date, end_date)
     total_activities = repository.count_canonical_activities(user_id)
-    activities = repository.list_canonical_activities(
-        user_id,
-        limit=None,
-        start_at=selected_range["start_at"],
-        end_at=selected_range["end_at"],
-    )
+    profile = repository.get_profile(user_id).model_dump()
+    activities = repository.list_canonical_activities(user_id, limit=None, end_at=selected_range["end_at"])
     analysis = analyze_activities(
         activities,
         weeks=selected_range["weeks"],
@@ -429,8 +425,9 @@ def dashboard(
         end_at=selected_range["end_at"],
         total_activities=total_activities,
         range_meta=selected_range["meta"],
+        profile=profile,
     )
-    insights = generate_insights(analysis)
+    insights = generate_insights(analysis, profile)
     return {
         "analysis": analysis,
         "insights": insights,
@@ -448,20 +445,17 @@ def insights(
     end_date: date | None = Query(None),
 ) -> dict:
     selected_range = _range_options(weeks, all_time, start_date, end_date)
+    profile = repository.get_profile(user_id).model_dump()
     analysis = analyze_activities(
-        repository.list_canonical_activities(
-            user_id,
-            limit=None,
-            start_at=selected_range["start_at"],
-            end_at=selected_range["end_at"],
-        ),
+        repository.list_canonical_activities(user_id, limit=None, end_at=selected_range["end_at"]),
         weeks=selected_range["weeks"],
         start_at=selected_range["start_at"],
         end_at=selected_range["end_at"],
         total_activities=repository.count_canonical_activities(user_id),
         range_meta=selected_range["meta"],
+        profile=profile,
     )
-    return {"insights": generate_insights(analysis), "analysis": analysis}
+    return {"insights": generate_insights(analysis, profile), "analysis": analysis}
 
 
 @app.post("/questions")
@@ -476,19 +470,15 @@ def questions(
     selected_range = _range_options(weeks, all_time, start_date, end_date)
     profile = repository.get_profile(user_id).model_dump()
     analysis = analyze_activities(
-        repository.list_canonical_activities(
-            user_id,
-            limit=None,
-            start_at=selected_range["start_at"],
-            end_at=selected_range["end_at"],
-        ),
+        repository.list_canonical_activities(user_id, limit=None, end_at=selected_range["end_at"]),
         weeks=selected_range["weeks"],
         start_at=selected_range["start_at"],
         end_at=selected_range["end_at"],
         total_activities=repository.count_canonical_activities(user_id),
         range_meta=selected_range["meta"],
+        profile=profile,
     )
-    insight_rows = generate_insights(analysis)
+    insight_rows = generate_insights(analysis, profile)
     answer = answer_question(request.question, profile, analysis, insight_rows)
     payload = answer.model_dump()
     repository.save_answer(user_id, request.question, payload)

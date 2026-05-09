@@ -27,7 +27,9 @@ def test_analyze_activities_detects_load_trend():
     result = analyze_activities(activities, weeks=12)
 
     assert result["summary"]["total_recent_load"] == 160
-    assert result["zone_breakdown"]["Threshold"]["load"] == 110
+    assert result["category_breakdown"]["Threshold"]["load"] == 110
+    assert result["form"]["ctl_now"] >= 0
+    assert result["verdict"]["headline"]
 
 
 def test_analyze_activities_supports_selected_all_time_window_with_total_count():
@@ -91,12 +93,48 @@ def test_generate_insights_flags_intensity_heavy_distribution():
     analysis = {
         "meta": {"recent_activities": 8},
         "summary": {"trend_pct": 0},
-        "zone_breakdown": {
+        "form": {"ramp_rate_per_week": 1.0},
+        "verdict": {"qualifier": "Holding steady"},
+        "load_quality": {"confidence": "high", "note": "High-confidence read."},
+        "category_breakdown": {
             "Threshold": {"load": 300, "count": 3},
             "Endurance": {"load": 100, "count": 2},
         },
     }
 
-    insights = generate_insights(analysis)
+    insights = generate_insights(analysis, {"event_type": "Gran fondo"})
 
-    assert any("Intensity-heavy" in insight["title"] for insight in insights)
+    assert any("intensity-heavy" in insight["title"].lower() for insight in insights)
+
+
+def test_analyze_activities_uses_history_before_visible_window_for_form():
+    activities = [
+        {
+            "name": "Old Base Ride",
+            "started_at": "2025-11-01T12:00:00+00:00",
+            "duration_seconds": 7200,
+            "tss": 120,
+            "estimated_load": None,
+            "workout_category": "Endurance",
+            "source_priority": "trainerroad",
+        },
+        {
+            "name": "Recent Tempo",
+            "started_at": "2026-01-15T12:00:00+00:00",
+            "duration_seconds": 3600,
+            "tss": 70,
+            "estimated_load": None,
+            "workout_category": "Tempo",
+            "source_priority": "trainerroad",
+        },
+    ]
+
+    result = analyze_activities(
+        activities,
+        start_at="2026-01-01T00:00:00+00:00",
+        end_at="2026-01-31T23:59:59+00:00",
+    )
+
+    assert result["meta"]["recent_activities"] == 1
+    assert result["form"]["start_date"] == "2026-01-01"
+    assert result["form"]["ctl_now"] > 0

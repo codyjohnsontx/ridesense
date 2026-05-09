@@ -1,4 +1,5 @@
 import {
+  forwardRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -34,15 +35,13 @@ const buttonSizes: Record<ButtonSize, string> = {
   icon: "h-9 w-9 p-0"
 };
 
-export function Button({
-  variant = "default",
-  size = "default",
-  type,
-  className,
-  ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }
+>(function Button({ variant = "default", size = "default", type, className, ...rest }, ref) {
   return (
     <button
+      ref={ref}
       type={type ?? "button"}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
@@ -53,7 +52,7 @@ export function Button({
       {...rest}
     />
   );
-}
+});
 
 export function Card({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (

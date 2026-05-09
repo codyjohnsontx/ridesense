@@ -13,7 +13,7 @@ export const METRICS: Record<MetricId, MetricMeta> = {
     label: "Fitness",
     abbr: "CTL",
     title:
-      "CTL · Chronic Training Load. Your long-term fitness trend. Higher = fitter, but build it gradually — sustainable progression is roughly 3–7% per week.",
+      "CTL · Chronic Training Load. A long-term load proxy built from roughly 42 days of scored training stress. Watch the week-to-week ramp, not just the absolute value.",
   },
   atl: {
     id: "atl",
@@ -24,10 +24,10 @@ export const METRICS: Record<MetricId, MetricMeta> = {
   },
   tsb: {
     id: "tsb",
-    label: "Form",
+    label: "Readiness",
     abbr: "TSB",
     title:
-      "TSB · Training Stress Balance. Fitness minus fatigue. Negative = absorbing training (you're building). Near zero = recovered. +5 to +25 = race-ready window.",
+      "TSB · Training Stress Balance. Here it is shown as next-day readiness: positive means fresher, negative means more residual fatigue. Useful as context, not a guarantee.",
   },
   tss_week: {
     id: "tss_week",
@@ -45,9 +45,9 @@ export const METRICS: Record<MetricId, MetricMeta> = {
   },
   zone_load: {
     id: "zone_load",
-    label: "Zone load",
-    abbr: "TSS by zone",
+    label: "Workout mix",
+    abbr: "Load by category",
     title:
-      "TSS by intensity zone. A healthy base typically has more Endurance/Tempo than Threshold/VO2 work — the inverse signals high-intensity bias.",
+      "Load by workout category, not true time in zone. Use it to see how the block is distributed across workout types, then judge whether that mix fits the goal of the block.",
   },
 };

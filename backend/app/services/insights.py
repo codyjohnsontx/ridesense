@@ -2,57 +2,71 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.goal_profile import _goal_profile
 
-def generate_insights(analysis: dict[str, Any]) -> list[dict[str, str]]:
+
+def generate_insights(analysis: dict[str, Any], profile: dict[str, Any] | None = None) -> list[dict[str, str]]:
     summary = analysis["summary"]
-    zones = analysis["zone_breakdown"]
+    categories = analysis["category_breakdown"]
+    verdict = analysis["verdict"]
+    quality = analysis["load_quality"]
     insights: list[dict[str, str]] = []
 
-    trend = summary["trend_pct"]
-    if trend >= 15:
+    ramp = analysis["form"]["ramp_rate_per_week"]
+    if ramp >= 5:
         insights.append(
             {
                 "level": "warning",
-                "title": "Training load is ramping quickly",
-                "body": f"Recent weekly load is up {trend}% versus the earlier part of this window. Check recovery and avoid stacking hard weeks without a downshift.",
+                "title": "CTL is ramping quickly",
+                "body": f"Fitness is rising about {ramp:.1f} CTL points per week. Productive blocks can do this, but recovery timing becomes more important.",
             }
         )
-    elif trend <= -15:
+    elif ramp <= -2:
         insights.append(
             {
                 "level": "regression",
-                "title": "Training load is trending down",
-                "body": f"Recent weekly load is down {abs(trend)}%. If this was not intentional, fitness stimulus may be fading.",
+                "title": "Fitness stimulus is easing",
+                "body": f"CTL is moving about {ramp:.1f} points per week, which suggests the recent load is not strongly progressive.",
             }
         )
     else:
         insights.append(
             {
                 "level": "stable",
-                "title": "Load trend is relatively stable",
-                "body": f"Weekly load changed {trend}% across this window, which suggests a steadier training pattern.",
+                "title": "Load trend is relatively steady",
+                "body": f"Weekly load changed {summary['trend_pct']}% across this window and the current verdict is {verdict['qualifier'].lower()}.",
             }
         )
 
     hard_load = sum(
-        zones.get(zone, {}).get("load", 0)
-        for zone in ["Threshold", "VO2 Max", "Anaerobic", "Sweet Spot"]
+        categories.get(name, {}).get("load", 0)
+        for name in ["Threshold", "VO2 Max", "Anaerobic", "Sweet Spot"]
     )
-    endurance_load = zones.get("Endurance", {}).get("load", 0) + zones.get("Tempo", {}).get("load", 0)
-    if hard_load > endurance_load * 1.2 and hard_load > 0:
+    aerobic_load = categories.get("Endurance", {}).get("load", 0) + categories.get("Tempo", {}).get("load", 0)
+    goal_profile = _goal_profile(profile)
+    if hard_load > aerobic_load * 1.2 and hard_load > 0 and goal_profile == "endurance":
         insights.append(
             {
                 "level": "warning",
-                "title": "Intensity-heavy distribution",
-                "body": "Most classified stress is coming from Sweet Spot, Threshold, VO2 Max, or Anaerobic work. That may be mismatched for endurance-event goals.",
+                "title": "Workout mix leans intensity-heavy",
+                "body": "More scored load is coming from hard workout categories than from endurance-oriented work. That can be fine short term, but it is worth checking against an endurance-focused goal.",
             }
         )
-    elif endurance_load > hard_load:
+    elif aerobic_load > hard_load and aerobic_load > 0:
         insights.append(
             {
                 "level": "progress",
-                "title": "Endurance base is well represented",
-                "body": "Endurance and Tempo work make up more classified load than high-intensity work in this window.",
+                "title": "Workout mix supports aerobic development",
+                "body": "Endurance and tempo categories account for more scored load than the harder workout categories in this window.",
+            }
+        )
+
+    if quality["confidence"] != "high":
+        insights.append(
+            {
+                "level": "data",
+                "title": "Confidence is reduced by data quality",
+                "body": quality["note"],
             }
         )
 
@@ -60,8 +74,8 @@ def generate_insights(analysis: dict[str, Any]) -> list[dict[str, str]]:
         insights.append(
             {
                 "level": "data",
-                "title": "Limited recent data",
-                "body": "There are not many recent workouts in the selected range, so trend confidence is lower.",
+                "title": "Limited recent activity count",
+                "body": "There are not many recent rides in the selected range, so trend and verdict confidence are naturally lower.",
             }
         )
 
