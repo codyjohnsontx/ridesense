@@ -35,6 +35,10 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const closeMobileMenu = () => setMenuOpen(false);
+  const triggerSyncNow = () => {
+    if (!onSyncNow || syncing) return;
+    onSyncNow();
+  };
 
   useEffect(() => {
     setMenuOpen(false);
@@ -57,6 +61,24 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
       content.removeAttribute("aria-hidden");
     };
   }, [menuOpen]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      if (!event.matches) return;
+      setMenuOpen(false);
+      const content = contentRef.current as (HTMLDivElement & { inert?: boolean }) | null;
+      if (!content) return;
+      content.inert = false;
+      content.removeAttribute("aria-hidden");
+    };
+
+    handleChange(media);
+    media.addEventListener("change", handleChange);
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -164,7 +186,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
               {lastSync ?? "Never · link a provider"}
             </div>
           </Card>
-          <Button variant="outline" size="sm" onClick={onSyncNow} disabled={syncing}>
+          <Button variant="outline" size="sm" onClick={triggerSyncNow} disabled={!onSyncNow || syncing}>
             <Icon name="refresh" size={13} />
             {syncing ? "Syncing…" : "Sync now"}
           </Button>
@@ -192,7 +214,13 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden sm:flex">{syncBadge}</div>
-            <Button variant="outline" size="sm" onClick={onSyncNow} disabled={syncing} className="px-2.5 sm:px-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={triggerSyncNow}
+              disabled={!onSyncNow || syncing}
+              className="px-2.5 sm:px-3"
+            >
               <Icon name="refresh" size={13} />
               <span className="hidden sm:inline">{syncing ? "Syncing…" : "Sync"}</span>
             </Button>
