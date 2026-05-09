@@ -113,7 +113,10 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
 
   const hrefFor = (href: string, rangeAware?: boolean) => (rangeAware ? withTimeRange(href, timeRange) : href);
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   const navContent = (
     <>
