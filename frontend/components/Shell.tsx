@@ -32,10 +32,31 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
   const [menuOpen, setMenuOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  const closeMobileMenu = () => setMenuOpen(false);
 
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const content = contentRef.current as (HTMLDivElement & { inert?: boolean }) | null;
+    if (!content) return;
+
+    if (menuOpen) {
+      content.inert = true;
+      content.setAttribute("aria-hidden", "true");
+    } else {
+      content.inert = false;
+      content.removeAttribute("aria-hidden");
+    }
+
+    return () => {
+      content.inert = false;
+      content.removeAttribute("aria-hidden");
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -110,6 +131,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
             <Link
               key={item.href}
               href={hrefFor(item.href, item.rangeAware)}
+              onClick={closeMobileMenu}
               className={`flex items-center gap-2.5 rounded-md border-0 px-2.5 py-2 text-left text-[13.5px] no-underline transition-colors ${
                 active
                   ? "bg-accent font-medium text-accent-foreground"
@@ -146,7 +168,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col bg-background">
+      <div ref={contentRef} className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex min-w-0 items-center gap-2">
             <Button
@@ -177,8 +199,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
         {menuOpen ? (
           <div
             className="fixed inset-0 z-40 bg-background/80 lg:hidden"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden="true"
+            onClick={closeMobileMenu}
           >
             <div
               ref={overlayRef}
@@ -194,7 +215,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
                   <Logo size={24} className="text-primary" />
                   <span className="text-sm font-semibold">RideSense</span>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => setMenuOpen(false)} aria-label="Close navigation">
+                <Button variant="ghost" size="icon" onClick={closeMobileMenu} aria-label="Close navigation">
                   <Icon name="x" size={18} />
                 </Button>
               </div>
