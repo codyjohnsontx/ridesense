@@ -199,45 +199,45 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
           </div>
         </header>
 
-        {menuOpen ? (
-          <div
-            className="fixed inset-0 z-40 bg-background/80 lg:hidden"
-            onClick={closeMobileMenu}
-          >
-            <div
-              ref={overlayRef}
-              id="mobile-nav-overlay"
-              className="flex h-full flex-col gap-4 bg-background px-4 py-4"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Navigation menu"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Logo size={24} className="text-primary" />
-                  <span className="text-sm font-semibold">RideSense</span>
-                </div>
-                <Button variant="ghost" size="icon" onClick={closeMobileMenu} aria-label="Close navigation">
-                  <Icon name="x" size={18} />
-                </Button>
-              </div>
-              <div className="flex flex-1 flex-col gap-4">
-                {navContent}
-              </div>
-              <Card className="px-3 py-2.5 shadow-none">
-                <div className="flex items-center justify-between text-[11.5px]">
-                  <span className="text-muted-foreground">Last sync</span>
-                  {syncBadge}
-                </div>
-                <div className="mono mt-1.5 text-[11px] text-muted-foreground">{lastSync ?? "Never · link a provider"}</div>
-              </Card>
-            </div>
-          </div>
-        ) : null}
-
         <div className="flex min-w-0 flex-1 flex-col bg-background">{children}</div>
       </div>
+
+      {menuOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-background/80 lg:hidden"
+          onClick={closeMobileMenu}
+        >
+          <div
+            ref={overlayRef}
+            id="mobile-nav-overlay"
+            className="flex h-full flex-col gap-4 bg-background px-4 py-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Logo size={24} className="text-primary" />
+                <span className="text-sm font-semibold">RideSense</span>
+              </div>
+              <Button variant="ghost" size="icon" onClick={closeMobileMenu} aria-label="Close navigation">
+                <Icon name="x" size={18} />
+              </Button>
+            </div>
+            <div className="flex flex-1 flex-col gap-4">
+              {navContent}
+            </div>
+            <Card className="px-3 py-2.5 shadow-none">
+              <div className="flex items-center justify-between text-[11.5px]">
+                <span className="text-muted-foreground">Last sync</span>
+                {syncBadge}
+              </div>
+              <div className="mono mt-1.5 text-[11px] text-muted-foreground">{lastSync ?? "Never · link a provider"}</div>
+            </Card>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
