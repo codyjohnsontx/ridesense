@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import requests
 
 from app.config import settings
 from app.schemas import GroundedAnswer
+
+
+logger = logging.getLogger(__name__)
 
 
 def fallback_answer(question: str, analysis: dict[str, Any], insights: list[dict[str, str]]) -> GroundedAnswer:
@@ -78,27 +82,31 @@ def answer_question(
             }
         ],
     }
-    response = requests.post(
-        "https://api.openai.com/v1/responses",
-        headers={
-            "Authorization": f"Bearer {settings.openai_api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": settings.openai_model,
-            "input": [prompt],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "grounded_training_answer",
-                    "schema": schema,
-                    "strict": True,
-                }
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
             },
-        },
-        timeout=45,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    text = payload["output"][0]["content"][0]["text"]
-    return GroundedAnswer.model_validate_json(text)
+            json={
+                "model": settings.openai_model,
+                "input": [prompt],
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "grounded_training_answer",
+                        "schema": schema,
+                        "strict": True,
+                    }
+                },
+            },
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        text = payload["output"][0]["content"][0]["text"]
+        return GroundedAnswer.model_validate_json(text)
+    except (requests.RequestException, KeyError, IndexError, ValueError, TypeError) as exc:
+        logger.warning("Falling back to deterministic answer for question len=%s: %s", len(question), exc)
+        return fallback_answer(question, analysis, insights)
