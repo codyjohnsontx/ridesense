@@ -102,7 +102,7 @@ export type ConfigStatus = {
   dev_auth_enabled: boolean;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = "/api";
 const ACTIVITY_PAGE_SIZE = 1000;
 
 export type PresetRange = "1m" | "12w" | "6mo" | "1y" | "2y";

@@ -41,17 +41,19 @@ pnpm install
 ```
 
 Next.js does **not** read the repo-root `.env` — it only loads env files from
-`frontend/`. Defaults vary by variable:
+`frontend/`. Local dev uses a same-origin `/api/*` proxy from the Next server
+to the backend. Defaults vary by variable:
 
-- `NEXT_PUBLIC_API_URL` has a default in `frontend/lib/api.ts`
-  (`http://localhost:8000`), so local dev works without a frontend env file.
+- `API_PROXY_TARGET` is a **server-side** frontend env var used by
+  `frontend/next.config.ts`. It defaults to `http://127.0.0.1:8000`, so local
+  dev works without a frontend env file as long as the backend listens there.
 - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` have **no
   defaults**. When either is missing, `frontend/lib/supabase.ts` exports
   `supabase = null` and the app runs unauthenticated against the dev backend.
 
-If you need to override the API URL or wire Supabase, create
-`frontend/.env.local` with the relevant `NEXT_PUBLIC_*` values from
-`.env.example`.
+If you need to override the backend target or wire Supabase, create
+`frontend/.env.local` with `API_PROXY_TARGET` and any relevant
+`NEXT_PUBLIC_*` values from `.env.example`.
 
 Run (two terminals):
 
