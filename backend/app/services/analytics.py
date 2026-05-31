@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from typing import Any
 
 from app.services.goal_profile import _goal_profile
@@ -97,7 +97,8 @@ def _filter_visible(
     if weeks is None:
         return activities
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(weeks=weeks)
+    cutoff_date = now.date() - timedelta(weeks=weeks)
+    cutoff = datetime.combine(cutoff_date, datetime_time.min, tzinfo=timezone.utc)
     return [a for a in activities if _parse_dt(a["started_at"]) >= cutoff]
 
 

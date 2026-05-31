@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+
+from app.services import analytics
 from app.services.analytics import analyze_activities
 from app.services.insights import generate_insights
 
@@ -24,8 +27,13 @@ def test_analyze_activities_detects_load_trend():
         },
     ]
 
-    result = analyze_activities(activities, weeks=12)
+    result = analyze_activities(
+        activities,
+        start_at="2026-03-01T00:00:00+00:00",
+        end_at="2026-04-27T23:59:59+00:00",
+    )
 
+    assert result["meta"]["recent_activities"] == 2
     assert result["summary"]["total_recent_load"] == 160
     assert result["category_breakdown"]["Threshold"]["load"] == 110
     assert result["form"]["ctl_now"] >= 0
@@ -87,6 +95,41 @@ def test_analyze_activities_uses_explicit_range_bounds_before_weeks_cutoff():
         "end_date": "2025-01-02",
     }
     assert result["summary"]["total_recent_load"] == 40
+
+
+def test_analyze_activities_weeks_cutoff_starts_at_utc_midnight(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 5, 24, 15, 30, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr(analytics, "datetime", FixedDateTime)
+    activities = [
+        {
+            "name": "Cutoff day ride",
+            "started_at": "2026-03-01T00:30:00+00:00",
+            "duration_seconds": 3600,
+            "tss": 20,
+            "estimated_load": None,
+            "workout_category": "Endurance",
+            "source_priority": "strava",
+        },
+        {
+            "name": "Previous day ride",
+            "started_at": "2026-02-28T23:59:59+00:00",
+            "duration_seconds": 3600,
+            "tss": 30,
+            "estimated_load": None,
+            "workout_category": "Endurance",
+            "source_priority": "strava",
+        },
+    ]
+
+    result = analyze_activities(activities, weeks=12)
+
+    assert result["meta"]["recent_activities"] == 1
+    assert result["summary"]["total_recent_load"] == 20
 
 
 def test_generate_insights_flags_intensity_heavy_distribution():
