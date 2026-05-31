@@ -15,6 +15,16 @@ The repository is organized as a working monorepo:
 
 The local backend uses SQLite for fast iteration. Production targets Supabase Postgres with the included schema and RLS.
 
+## App Screenshots
+
+Desktop overview:
+
+![RideSense desktop overview](docs/assets/readme/overview-desktop.png)
+
+Mobile overview:
+
+![RideSense mobile overview](docs/assets/readme/overview-mobile.png)
+
 ## Local Setup
 
 One-time:
