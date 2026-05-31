@@ -15,7 +15,8 @@ const NAV: Array<{ href: string; icon: IconName; label: string; rangeAware?: boo
   { href: "/activities", icon: "bike", label: "Activities", rangeAware: true },
   { href: "/ask", icon: "sparkles", label: "Ask", rangeAware: true },
   { href: "/connections", icon: "plug", label: "Connections" },
-  { href: "/athlete-context", icon: "user", label: "Athlete Context" }
+  { href: "/athlete-context", icon: "user", label: "Goals & Context" },
+  { href: "/docs", icon: "book", label: "Docs" }
 ];
 
 type ShellProps = {
@@ -227,7 +228,7 @@ export function Shell({ lastSync, syncStatus = "ok", onSyncNow, syncing, timeRan
           </div>
         </header>
 
-        <div className="flex min-w-0 flex-1 flex-col bg-background">{children}</div>
+        <main className="flex min-w-0 flex-1 flex-col bg-background">{children}</main>
       </div>
 
       {menuOpen ? (

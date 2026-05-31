@@ -150,7 +150,7 @@ function SummaryStat({
   detail,
   badge
 }: {
-  label: string;
+  label: ReactNode;
   value: string;
   detail: string;
   badge?: ReactNode;
@@ -165,6 +165,106 @@ function SummaryStat({
       <span className="text-[12.5px] text-muted-foreground">{detail}</span>
     </div>
   );
+}
+
+function EmptyState({
+  icon = "info",
+  title,
+  body,
+  action
+}: {
+  icon?: Parameters<typeof Icon>[0]["name"];
+  title: string;
+  body: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-8 text-center">
+      <Icon name={icon} size={18} />
+      <div>
+        <div className="text-sm font-semibold">{title}</div>
+        <p className="mx-auto mt-1 max-w-md text-[13px] leading-relaxed text-muted-foreground">{body}</p>
+      </div>
+      {action ? <div className="flex flex-wrap justify-center gap-2">{action}</div> : null}
+    </div>
+  );
+}
+
+function StepList({
+  steps
+}: {
+  steps: Array<{ title: string; detail: string; status: "done" | "current" | "todo"; action?: ReactNode }>;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
+      {steps.map((step, index) => (
+        <div
+          key={step.title}
+          className={`rounded-md border px-3 py-3 ${
+            step.status === "current"
+              ? "border-foreground bg-foreground text-background"
+              : step.status === "done"
+                ? "border-[hsl(var(--success)/0.35)] bg-[hsl(var(--success)/0.08)]"
+                : "border-border bg-background"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className={`flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                step.status === "current" ? "border-background" : "border-border"
+              }`}
+            >
+              {step.status === "done" ? "OK" : index + 1}
+            </span>
+            <span className="text-[13px] font-semibold">{step.title}</span>
+          </div>
+          <p className={`m-0 mt-2 text-[12.5px] leading-snug ${step.status === "current" ? "text-background/75" : "text-muted-foreground"}`}>
+            {step.detail}
+          </p>
+          {step.action ? <div className="mt-3">{step.action}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReadoutRow({ items }: { items: Array<{ id?: string; label: ReactNode; value: string; detail: string }> }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {items.map((item, index) => (
+        <div key={item.id ?? String(index)} className="rounded-md border border-border px-3 py-2.5">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{item.label}</div>
+          <div className="mono num mt-1 text-[26px] font-semibold leading-none">{item.value}</div>
+          <div className="mt-1 text-[12px] text-muted-foreground">{item.detail}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NextBestAction({
+  title = "Next best action",
+  body,
+  href,
+  label
+}: {
+  title?: string;
+  body: string;
+  href: string;
+  label: string;
+}) {
+  return (
+    <Alert icon={<Icon name="trendUp" size={14} />} title={title}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span>{body}</span>
+        <RangeLink href={href} label={label} />
+      </div>
+    </Alert>
+  );
+}
+
+function isProfileMissing(profile: AthleteProfile) {
+  return !profile.event_type.trim() && !profile.goals.trim() && !profile.constraints.trim() && !profile.training_days.trim();
 }
 
 function RouteWorkspace({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -212,12 +312,41 @@ function GlobalMessage() {
 }
 
 export function OverviewRoute() {
-  const { dashboard, timeRange, setTimeRange, question, setQuestion, ask, asking, answer, syncing, syncAll } =
+  const {
+    dashboard,
+    profile,
+    timeRange,
+    setTimeRange,
+    question,
+    setQuestion,
+    ask,
+    asking,
+    answer,
+    syncing,
+    syncAll,
+    linkStrava,
+    uploadFile,
+    uploading
+  } =
     useAppState();
   const snapshot = useTrainingSnapshot(dashboard);
 
   if (!dashboard || !snapshot) return <PageSkeleton />;
   const overviewActivities = snapshot.topActivities.slice(0, 4);
+  const totalActivities = dashboard.analysis.meta.total_activities;
+  const hasData = totalActivities > 0;
+  const stravaConnection = dashboard.connections.find((c) => c.provider === "strava");
+  const stravaLinked = Boolean(stravaConnection && ["connected", "active"].includes(stravaConnection.status));
+  const contextMissing = isProfileMissing(profile);
+  const onboardingState = !hasData
+    ? stravaLinked
+      ? "strava-linked"
+      : "no-data"
+    : contextMissing
+      ? "context-missing"
+      : "ready";
+  const confidenceVariant: "success" | "warning" | "outline" =
+    snapshot.loadQuality.confidence === "high" ? "success" : snapshot.loadQuality.confidence === "medium" ? "warning" : "outline";
 
   return (
     <>
@@ -265,6 +394,81 @@ export function OverviewRoute() {
           </CardContent>
         </Card>
 
+        <Card className="shadow-none">
+          <CardHeader>
+            <CardTitle>Start here</CardTitle>
+            <CardDescription>
+              {onboardingState === "ready"
+                ? "Review the current read, then inspect the chart or rides behind it."
+                : onboardingState === "context-missing"
+                  ? "Your rides are imported. Add goals next so the training read has the right context."
+                  : onboardingState === "strava-linked"
+                    ? "Strava is linked. Sync now to pull rides into the analysis."
+                    : "Connect Strava first, or upload a ride file if you want to try the app without linking."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <StepList
+              steps={[
+                {
+                  title: "Connect Strava",
+                  detail: stravaLinked ? "The Strava account is linked." : "Use Strava as the primary source for ride data.",
+                  status: stravaLinked ? "done" : "current",
+                  action: !stravaLinked ? (
+                    <Button variant="secondary" size="sm" onClick={linkStrava}>
+                      <Icon name="plug" size={13} />
+                      Link Strava
+                    </Button>
+                  ) : null
+                },
+                {
+                  title: "Sync rides",
+                  detail: hasData ? `${totalActivities} activities are available.` : "Pull recent rides after linking.",
+                  status: hasData ? "done" : stravaLinked ? "current" : "todo",
+                  action: !hasData && stravaLinked ? (
+                    <Button variant="secondary" size="sm" onClick={syncAll} disabled={syncing}>
+                      <Icon name="refresh" size={13} />
+                      {syncing ? "Syncing…" : "Sync rides"}
+                    </Button>
+                  ) : null
+                },
+                {
+                  title: "Add context",
+                  detail: contextMissing ? "Goals make answers and recommendations more useful." : "Goals and constraints are saved.",
+                  status: !hasData ? "todo" : contextMissing ? "current" : "done",
+                  action: hasData && contextMissing ? (
+                    <RangeLink href="/athlete-context" label="Open Goals & Context" />
+                  ) : null
+                },
+                {
+                  title: hasData ? "Review insight" : "Upload a ride",
+                  detail: hasData ? "Use the read below, then inspect the details." : "Upload is available as a fallback import path.",
+                  status: hasData && !contextMissing ? "current" : "todo",
+                  action: !hasData ? (
+                    <label className="inline-flex">
+                      <span className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-transparent px-3 text-[13px] font-medium text-foreground hover:bg-accent">
+                        <Icon name="download" size={13} />
+                        {uploading ? "Uploading…" : "Upload file"}
+                      </span>
+                      <input
+                        type="file"
+                        accept=".gpx,.tcx,.fit"
+                        className="sr-only"
+                        disabled={uploading}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) uploadFile(file);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  ) : null
+                }
+              ]}
+            />
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.65fr)_320px]">
           <Card className="overflow-hidden">
             <CardContent className="gap-4 px-5 py-4 sm:px-6 sm:py-5">
@@ -287,30 +491,14 @@ export function OverviewRoute() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-3">
-                <SummaryStat label="Fitness (CTL)" value={snapshot.form.ctl_now.toFixed(0)} detail="Long-term workload" />
-                <SummaryStat label="Fatigue (ATL)" value={snapshot.form.atl_now.toFixed(0)} detail="Recent short-term strain" />
-                <SummaryStat label="Readiness (TSB)" value={snapshot.form.tsb_now.toFixed(0)} detail="Projected next-day form" />
-              </div>
-              <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                <Badge
-                  variant={
-                    snapshot.loadQuality.confidence === "high"
-                      ? "success"
-                      : snapshot.loadQuality.confidence === "medium"
-                        ? "warning"
-                        : "outline"
-                  }
-                  className="text-[10px]"
-                >
-                  ● {snapshot.loadQuality.confidence} confidence
-                </Badge>
-                <Badge variant="outline" className="text-[10px]">
-                  Proxy load {snapshot.loadQuality.proxy_share_pct.toFixed(0)}%
-                </Badge>
-                <Badge variant="outline" className="text-[10px]">
-                  History {snapshot.loadQuality.history_days} days
-                </Badge>
+              <div className="border-t border-border pt-4">
+                <ReadoutRow
+                  items={[
+                    { id: "fitness", label: <MetricLabel metric={METRICS.ctl} label="Fitness" />, value: snapshot.form.ctl_now.toFixed(0), detail: "Long-term workload" },
+                    { id: "fatigue", label: <MetricLabel metric={METRICS.atl} label="Fatigue" />, value: snapshot.form.atl_now.toFixed(0), detail: "Recent short-term strain" },
+                    { id: "freshness", label: <MetricLabel metric={METRICS.tsb} label="Freshness" />, value: snapshot.form.tsb_now.toFixed(0), detail: "Projected next-day form" }
+                  ]}
+                />
               </div>
 
               <div className="grid grid-cols-1 gap-3 border-t border-border pt-4 xl:grid-cols-[minmax(0,1.2fr)_280px] xl:items-start">
@@ -336,16 +524,28 @@ export function OverviewRoute() {
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 xl:grid-cols-1">
                   <div className="rounded-md border border-border px-3 py-2.5">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Why this verdict</div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Why this changed</div>
                     <div className="mt-1 text-[13px] text-muted-foreground">
                       {snapshot.verdict.reasoning}
                     </div>
                   </div>
                   <div className="rounded-md border border-border px-3 py-2.5">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Inspect next</div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">What to check next</div>
                     <div className="mt-1 text-[13px] text-muted-foreground">
                       {snapshot.verdict.next_step}
                     </div>
+                  </div>
+                  <div className="rounded-md border border-border px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Confidence</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      <Badge variant={confidenceVariant} className="text-[10px]">
+                        ● {snapshot.loadQuality.confidence}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        Proxy {snapshot.loadQuality.proxy_share_pct.toFixed(0)}%
+                      </Badge>
+                    </div>
+                    <p className="m-0 mt-2 text-[12.5px] leading-snug text-muted-foreground">{snapshot.loadQuality.note}</p>
                   </div>
                 </div>
               </div>
@@ -387,9 +587,12 @@ export function OverviewRoute() {
             </CardHeader>
             <CardContent className="gap-0 pt-1">
               {dashboard.insights.length === 0 ? (
-                <p className="text-[13px] text-muted-foreground">
-                  Sync TrainerRoad or Strava to surface progression and recovery signals.
-                </p>
+                <EmptyState
+                  icon="sparkles"
+                  title="No signals yet"
+                  body="Connect Strava, sync rides, or upload a file to surface progression and recovery observations."
+                  action={<RangeLink href="/connections" label="Open Connections" />}
+                />
               ) : null}
               {dashboard.insights.slice(0, 3).map((signal, index) => {
                 const level = signal.level.toLowerCase();
@@ -446,7 +649,13 @@ export function OverviewRoute() {
                   </div>
                   <p className="m-0 text-[13px] leading-relaxed">{answer.answer}</p>
                 </div>
-              ) : null}
+              ) : (
+                <EmptyState
+                  icon="sparkles"
+                  title="No answer yet"
+                  body="Ask a plain-language question about your training read. Answers cite the metrics they used."
+                />
+              )}
             </CardContent>
           </Card>
         </div>
@@ -494,7 +703,7 @@ export function OverviewRoute() {
                   {overviewActivities.length === 0 ? (
                     <tr className="border-t border-border">
                       <td className="px-4 py-6 text-center text-muted-foreground" colSpan={5}>
-                        No activities in this range yet.
+                        No activities in this range yet. Connect Strava or upload a ride file to start the analysis.
                       </td>
                     </tr>
                   ) : null}
@@ -525,6 +734,11 @@ export function TrainingRoute() {
       />
       <RouteWorkspace>
         <RouteMessage />
+        <NextBestAction
+          body="Start with Fitness, then use Intensity and Consistency only when you need to explain the read."
+          href={withTimeRange("/activities", timeRange)}
+          label="Check source rides"
+        />
         <Card className="shadow-none">
           <CardContent className="gap-4 px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -576,6 +790,10 @@ export function TrainingRoute() {
                 </div>
               </CardHeader>
               <CardContent className="px-5 pb-4 pt-3">
+                <Alert icon={<Icon name="info" size={14} />} title="Takeaway">
+                  Fitness is {snapshot.form.ctl_change_pct_4w >= 0 ? "up" : "down"} {Math.abs(snapshot.form.ctl_change_pct_4w).toFixed(0)}%
+                  over four weeks, with current freshness at {snapshot.form.tsb_now.toFixed(0)}.
+                </Alert>
                 <FormFitnessCurve
                   ctl={snapshot.form.ctl}
                   atl={snapshot.form.atl}
@@ -613,6 +831,9 @@ export function TrainingRoute() {
                     <span className="mono num text-[38px] font-semibold">{snapshot.recentWeekLoad}</span>
                     <Delta value={snapshot.weekDeltaPct} />
                   </div>
+                  <p className="m-0 text-[12.5px] text-muted-foreground">
+                    This week is {Math.abs(snapshot.weekDeltaPct)}% {snapshot.weekDeltaPct >= 0 ? "above" : "below"} the recent weekly baseline.
+                  </p>
                   <WeeklyLoadChart weekly={snapshot.weekly} h={132} />
                 </CardContent>
               </Card>
@@ -628,6 +849,9 @@ export function TrainingRoute() {
                 <CardDescription>Where the scored load went by workout category in {timeRange.label.toLowerCase()}.</CardDescription>
               </CardHeader>
               <CardContent>
+                <Alert icon={<Icon name="info" size={14} />} title="Takeaway">
+                  The largest share of scored load is {snapshot.zoneRows[0]?.key ?? "not classified yet"} at {snapshot.zoneRows[0]?.pct ?? 0}%.
+                </Alert>
                 <ZoneStackBar zones={snapshot.zoneRows} h={16} />
                 <div className="mono mt-4 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
                   {snapshot.zoneRows.map((zone, index) => (
@@ -689,6 +913,9 @@ export function TrainingRoute() {
                 <CardDescription>{Math.ceil(snapshot.form.daily_load.length / 7)} weeks of daily scored load</CardDescription>
               </CardHeader>
               <CardContent>
+                <Alert icon={<Icon name="info" size={14} />} title="Takeaway">
+                  {dashboard.analysis.meta.recent_activities} visible activities are spread across {snapshot.weekly.length} weekly buckets.
+                </Alert>
                 <WeekHeatmap daily={snapshot.form.daily_load} endDate={snapshot.chartEndDate} h={92} />
               </CardContent>
             </Card>
@@ -783,6 +1010,11 @@ export function ActivitiesRoute() {
       />
       <RouteWorkspace>
         <RouteMessage />
+        <NextBestAction
+          body={filteredActivities.length > 0 ? "Open Training to interpret this filtered set instead of reading the list alone." : "No rides match this view. Clear filters or import rides from Connections."}
+          href={filteredActivities.length > 0 ? withTimeRange("/training", timeRange) : "/connections"}
+          label={filteredActivities.length > 0 ? "Interpret in Training" : "Open Connections"}
+        />
         <Card className="shadow-none">
           <CardContent className="gap-4 px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -892,7 +1124,7 @@ export function ActivitiesRoute() {
                   {filteredActivities.length === 0 ? (
                     <tr className="border-t border-border">
                       <td className="px-4 py-6 text-center text-muted-foreground" colSpan={7}>
-                        No activities match the current filters.
+                        No activities match the current filters. Clear filters, connect Strava, or upload a ride file.
                       </td>
                     </tr>
                   ) : null}
@@ -910,10 +1142,10 @@ export function AskRoute() {
   const { question, setQuestion, ask, asking, answer, timeRange, setTimeRange } = useAppState();
 
   const suggestions = [
-    "Am I building fitness at a sustainable rate?",
-    "Where is most of my load concentrated right now?",
-    "Do my recent weeks suggest I need more recovery?",
-    "What changed most between the start and end of this range?"
+    "What is the main thing I should take from my recent rides?",
+    "Am I doing too much too soon?",
+    "Should I keep training hard or back off this week?",
+    "Which recent ride changed my training read the most?"
   ];
 
   return (
@@ -926,6 +1158,11 @@ export function AskRoute() {
       />
       <RouteWorkspace>
         <RouteMessage />
+        <NextBestAction
+          body="Ask one decision-focused question, then use the evidence cards to decide what to inspect next."
+          href={withTimeRange("/training", timeRange)}
+          label="Open Training"
+        />
         <Card className="shadow-none">
           <CardContent className="gap-4 px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -1008,9 +1245,11 @@ export function AskRoute() {
                     ) : null}
                   </>
                 ) : (
-                  <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-[13px] text-muted-foreground">
-                    Ask a question to generate a grounded answer with supporting evidence.
-                  </div>
+                  <EmptyState
+                    icon="sparkles"
+                    title="No answer yet"
+                    body="Ask a plain-language question to generate a grounded answer with evidence, confidence, and caveats."
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1024,7 +1263,13 @@ export function AskRoute() {
               </CardHeader>
               <CardContent>
                 {suggestions.map((suggestion) => (
-                  <Button key={suggestion} variant="outline" size="sm" className="justify-start whitespace-normal text-left h-auto py-2" onClick={() => setQuestion(suggestion)}>
+                  <Button
+                    key={suggestion}
+                    variant="outline"
+                    size="sm"
+                    className="h-auto w-full min-w-0 justify-start break-words py-2 text-left [white-space:normal]"
+                    onClick={() => setQuestion(suggestion)}
+                  >
                     {suggestion}
                   </Button>
                 ))}
@@ -1039,7 +1284,13 @@ export function AskRoute() {
                 </CardHeader>
                 <CardContent>
                   {answer.follow_up_questions.map((followUp) => (
-                    <Button key={followUp} variant="ghost" size="sm" className="justify-start whitespace-normal text-left h-auto py-2" onClick={() => setQuestion(followUp)}>
+                    <Button
+                      key={followUp}
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto w-full min-w-0 justify-start break-words py-2 text-left [white-space:normal]"
+                      onClick={() => setQuestion(followUp)}
+                    >
                       {followUp}
                     </Button>
                   ))}
@@ -1082,7 +1333,7 @@ export function ConnectionsRoute() {
     {
       key: "strava",
       name: "Strava",
-      description: "OAuth · activity feed, GPS, HR, power.",
+      description: "Primary path · activity feed, GPS, HR, power.",
       connection: stravaConnection,
       action: linkStrava,
       cta:
@@ -1096,7 +1347,7 @@ export function ConnectionsRoute() {
     {
       key: "trainerroad",
       name: "TrainerRoad",
-      description: "Browser-session linking · workouts, planned TSS, ramp tests.",
+      description: "Beta scaffold · not production-ready for account linking yet.",
       connection: trConnection,
       action: linkTrainerRoad,
       cta:
@@ -1114,7 +1365,7 @@ export function ConnectionsRoute() {
       <PageHeader
         eyebrow="Connections"
         title="Sources and sync"
-        subtitle="Link providers, import files, and audit sync history."
+        subtitle="Start with Strava, use upload as the fallback, and treat TrainerRoad linking as beta."
         right={
           <Button variant="default" size="sm" onClick={syncAll} disabled={syncing}>
             <Icon name="zap" size={13} />
@@ -1141,7 +1392,7 @@ export function ConnectionsRoute() {
                 <div>
                   <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Workspace</div>
                   <div className="mt-1 text-[14px] text-muted-foreground">
-                    Manage provider access, upload files, and review sync activity without leaving this page.
+                    Connect Strava first for the cleanest setup. Upload files are useful for backfill or testing without linking.
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:w-[340px]">
@@ -1166,7 +1417,7 @@ export function ConnectionsRoute() {
                 onChange={setSection}
                 options={[
                   { value: "providers", label: "Providers" },
-                  { value: "upload", label: "Upload" },
+                  { value: "upload", label: "Upload fallback" },
                   { value: "history", label: "Sync history" }
                 ]}
               />
@@ -1174,8 +1425,22 @@ export function ConnectionsRoute() {
           </Card>
 
           {section === "providers" ? (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {cards.map((card) => {
+            <>
+              {connectedCount === 0 ? (
+                <NextBestAction
+                  body="Link Strava, then run Sync all. If you do not want to connect an account yet, upload one ride file instead."
+                  href="/connections"
+                  label="Stay on setup"
+                />
+              ) : (
+                <NextBestAction
+                  body="Run a sync after linking, then return to Overview for the first training read."
+                  href="/"
+                  label="Open Overview"
+                />
+              )}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {cards.map((card) => {
                 const status = card.connection?.status ?? "not connected";
                 const variant: "success" | "warning" | "outline" =
                   status === "connected" || status === "active"
@@ -1185,7 +1450,7 @@ export function ConnectionsRoute() {
                       : "outline";
                 const isTrainerRoad = card.key === "trainerroad";
                 return (
-                  <Card key={card.key}>
+                  <Card key={card.key} className={card.key === "strava" ? "xl:col-span-2" : ""}>
                     <CardHeader className="pb-0">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1237,7 +1502,8 @@ export function ConnectionsRoute() {
                   </Card>
                 );
               })}
-            </div>
+              </div>
+            </>
           ) : null}
 
           {section === "upload" ? (
@@ -1250,6 +1516,9 @@ export function ConnectionsRoute() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="gap-4">
+                <Alert icon={<Icon name="info" size={14} />} title="Fallback import">
+                  Upload is best for backfilling a ride, trying RideSense before linking Strava, or importing files from outside your connected account.
+                </Alert>
                 <label
                   className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-9 text-[12.5px] text-muted-foreground transition hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring"
                   onDragOver={(event) => event.preventDefault()}
@@ -1331,8 +1600,12 @@ export function ConnectionsRoute() {
                       ))}
                       {dashboard.sync_runs.length === 0 ? (
                         <tr className="border-t border-border">
-                          <td className="px-4 py-8 text-center text-muted-foreground" colSpan={4}>
-                            No syncs yet. Run a sync after linking a provider to start building history.
+                          <td className="px-4 py-6" colSpan={4}>
+                            <EmptyState
+                              icon="refresh"
+                              title="No sync history yet"
+                              body="Link Strava and run Sync all to start building a visible sync log."
+                            />
                           </td>
                         </tr>
                       ) : null}
@@ -1362,9 +1635,9 @@ export function AthleteContextRoute() {
   return (
     <>
       <PageHeader
-        eyebrow="Athlete Context"
-        title="Athlete context"
-        subtitle="Saved notes that ground answers and explain what the numbers are in service of."
+        eyebrow="Goals & Context"
+        title="Goals & context"
+        subtitle="Saved goals and constraints that explain what the numbers are in service of."
         right={
           session ? (
             <Button variant="outline" size="sm" onClick={signOut}>
@@ -1379,7 +1652,7 @@ export function AthleteContextRoute() {
           <CardContent className="gap-4 px-4 py-4 sm:px-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Athlete notes</div>
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Goals and notes</div>
                 <div className="mt-1 text-[14px] text-muted-foreground">
                   Keep goals, constraints, and training context current so grounded answers reflect what the numbers are in service of.
                 </div>
@@ -1390,6 +1663,12 @@ export function AthleteContextRoute() {
             </div>
           </CardContent>
         </Card>
+
+        <NextBestAction
+          body="Save your event, goals, and constraints, then ask a question that depends on that context."
+          href="/ask"
+          label="Open Ask"
+        />
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
           <Card>
@@ -1431,6 +1710,143 @@ export function AthleteContextRoute() {
               </div>
             </CardContent>
           </Card>
+        </div>
+      </RouteWorkspace>
+    </>
+  );
+}
+
+const docsSections = [
+  {
+    title: "First run",
+    items: [
+      "Open Overview and follow Start here.",
+      "Link Strava first when you want live ride imports.",
+      "Use Upload fallback for GPX, TCX, or FIT files when you do not want to connect an account yet.",
+      "Add Goals & Context after your first rides load so Ask can answer against your actual goals."
+    ]
+  },
+  {
+    title: "Data sources",
+    items: [
+      "Strava is the primary production-ready connection path.",
+      "Uploaded files are deduplicated and flow into the same activity timeline as connected providers.",
+      "TrainerRoad linking is beta/scaffolded in this app, so treat it as transparent future plumbing rather than a ready account connection.",
+      "The merged activity feed shows which source contributed each ride."
+    ]
+  },
+  {
+    title: "Training read",
+    items: [
+      "Fitness is the long-term workload signal, shown with CTL available in tooltips and supporting labels.",
+      "Fatigue is recent short-term strain, shown with ATL as the technical label.",
+      "Freshness is projected next-day form, shown with TSB as the technical label.",
+      "Confidence tells you how much history and scored load support the current read."
+    ]
+  },
+  {
+    title: "Ask",
+    items: [
+      "Ask one decision-focused question at a time.",
+      "Answers cite the metrics they used and include caveats when data quality is limited.",
+      "Use follow-up questions to narrow from the current training read into rides, workload, or recovery.",
+      "Keep Goals & Context current when your event, schedule, or constraints change."
+    ]
+  }
+];
+
+const docWorkflows = [
+  { label: "No data yet", action: "Open Connections, link Strava, then run Sync all." },
+  { label: "Want to try one ride", action: "Open Connections, choose Upload fallback, then upload a GPX, TCX, or FIT file." },
+  { label: "First training read", action: "Open Overview, read Current read, then check Why this changed and Confidence." },
+  { label: "Need detail", action: "Open Training for charts or Activities for the source rides behind the read." }
+];
+
+export function DocsRoute() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Docs"
+        title="RideSense docs"
+        subtitle="A practical guide to setup, source data, training reads, and grounded questions."
+      />
+      <RouteWorkspace>
+        <Card className="shadow-none">
+          <CardContent className="gap-4 px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Quick orientation</div>
+                <div className="mt-1 max-w-3xl text-[14px] leading-relaxed text-muted-foreground">
+                  RideSense helps cyclists get from imported rides to a plain-language training read without requiring CTL,
+                  ATL, or TSB knowledge up front.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <RangeLink href="/connections" label="Set up sources" />
+                <RangeLink href="/" label="Open Overview" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_320px]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {docsSections.map((section) => (
+              <Card key={section.title}>
+                <CardHeader>
+                  <CardTitle>{section.title}</CardTitle>
+                  <CardDescription>
+                    {section.title === "First run"
+                      ? "The fastest path from empty app to first read."
+                      : section.title === "Data sources"
+                        ? "What each import path means today."
+                        : section.title === "Training read"
+                          ? "How to interpret the main signals."
+                          : "How to get useful grounded answers."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="m-0 list-disc pl-5 text-[13px] leading-relaxed text-muted-foreground">
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Common workflows</CardTitle>
+                <CardDescription>Use these when you are not sure where to go next.</CardDescription>
+              </CardHeader>
+              <CardContent className="gap-0 pt-1">
+                {docWorkflows.map((workflow, index) => (
+                  <div key={workflow.label} className={`py-3 ${index === 0 ? "" : "border-t border-border"}`}>
+                    <div className="text-[13px] font-medium">{workflow.label}</div>
+                    <p className="m-0 mt-1 text-[12.5px] leading-snug text-muted-foreground">{workflow.action}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Beta notes</CardTitle>
+                <CardDescription>Current product boundaries.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Alert icon={<Icon name="info" size={14} />} title="TrainerRoad">
+                  TrainerRoad account linking is scaffolded and not production-ready. Use Strava or file upload for reliable imports.
+                </Alert>
+                <Alert icon={<Icon name="info" size={14} />} title="AI answers">
+                  Ask is decision support. It cites RideSense metrics, includes caveats, and should not be treated as medical advice.
+                </Alert>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </RouteWorkspace>
     </>

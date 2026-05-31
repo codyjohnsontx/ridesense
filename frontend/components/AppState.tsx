@@ -289,7 +289,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       const next = await api.saveProfile(profile, accessToken);
       setProfile(next);
-      setMessage("Athlete context saved.");
+      setMessage("Goals & context saved.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Save failed.");
     } finally {
